@@ -2,8 +2,13 @@ package alterx
 
 import (
 	"os"
-
+	"path/filepath"
 	"gopkg.in/yaml.v3"
+)
+
+var (
+	DefaultConfigFilePath            = filepath.Join(getUserHomeDir(), ".config/alterx/config.yaml")
+	DefaultPermutationConfigFilePath = filepath.Join(getUserHomeDir(), ".config/alterx/permutation.yaml")
 )
 
 type Config struct {
@@ -35,4 +40,12 @@ func GenerateSample(filePath string) error {
 		return err
 	}
 	return os.WriteFile(filePath, bin, 0644)
+}
+
+func getUserHomeDir() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+	return homeDir
 }
