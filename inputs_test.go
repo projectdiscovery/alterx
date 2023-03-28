@@ -9,10 +9,11 @@ import (
 func TestInput(t *testing.T) {
 	testcases := []string{"scanme.co.uk", "https://scanme.co.uk", "scanme.co.uk:443", "https://scanme.co.uk:443"}
 	expected := &Input{
-		TLD:  "uk",
-		ETLD: "co.uk",
-		Root: "scanme.co.uk",
-		Sub:  "",
+		TLD:    "uk",
+		ETLD:   "co.uk",
+		Root:   "scanme.co.uk",
+		Suffix: "scanme.co.uk",
+		Sub:    "",
 	}
 	for _, v := range testcases {
 		got, err := NewInput(v)
@@ -26,11 +27,11 @@ func TestInputSub(t *testing.T) {
 		url      string
 		expected *Input
 	}{
-		{url: "something.scanme.sh", expected: &Input{TLD: "sh", ETLD: "", Root: "scanme.sh", Sub: "something"}},
-		{url: "nested.something.scanme.sh", expected: &Input{TLD: "sh", ETLD: "", Root: "scanme.sh", Sub: "nested", MultiLevel: []string{"something"}}},
-		{url: "nested.multilevel.scanme.co.uk", expected: &Input{TLD: "uk", ETLD: "co.uk", Root: "scanme.co.uk", Sub: "nested", MultiLevel: []string{"multilevel"}}},
-		{url: "sub.level1.level2.scanme.sh", expected: &Input{TLD: "sh", ETLD: "", Root: "scanme.sh", Sub: "sub", MultiLevel: []string{"level1", "level2"}}},
-		{url: "scanme.sh", expected: &Input{TLD: "sh", ETLD: "", Sub: "", Root: "scanme.sh"}},
+		{url: "something.scanme.sh", expected: &Input{TLD: "sh", ETLD: "", Root: "scanme.sh", Sub: "something", Suffix: "scanme.sh"}},
+		{url: "nested.something.scanme.sh", expected: &Input{TLD: "sh", ETLD: "", Root: "scanme.sh", Sub: "nested", Suffix: "something.scanme.sh", MultiLevel: []string{"something"}}},
+		{url: "nested.multilevel.scanme.co.uk", expected: &Input{TLD: "uk", ETLD: "co.uk", Root: "scanme.co.uk", Sub: "nested", Suffix: "multilevel.scanme.co.uk", MultiLevel: []string{"multilevel"}}},
+		{url: "sub.level1.level2.scanme.sh", expected: &Input{TLD: "sh", ETLD: "", Root: "scanme.sh", Sub: "sub", Suffix: "level1.level2.scanme.sh", MultiLevel: []string{"level1", "level2"}}},
+		{url: "scanme.sh", expected: &Input{TLD: "sh", ETLD: "", Sub: "", Suffix: "scanme.sh", Root: "scanme.sh"}},
 	}
 	for _, v := range testcases {
 		got, err := NewInput(v.url)
