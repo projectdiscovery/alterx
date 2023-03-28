@@ -21,7 +21,7 @@ func TestMutatorCount(t *testing.T) {
 	// there's only one different-var(which can't derived from domain) is used which is {{word}}.
 	// If the pattern is '{{sub}}.{{word}}.{{year}}.{{suffix}}' then
 	// expectedCount = len(Patterns) * (len(WordList["word"])+len(WordList["year"]))* len(opts.Domains)
-	expectedCount := len(DefaultPatterns) * len(DefaultWordList["word"]) * len(opts.Domains)
+	expectedCount := len(defaultPatterns) * len(defaultWordList["word"]) * len(opts.Domains)
 	m, err := New(opts)
 	require.Nil(t, err)
 	require.EqualValues(t, expectedCount, m.EstimateCount())
@@ -37,7 +37,7 @@ func TestMutatorCount(t *testing.T) {
 	// in this case count will be totally different since ^(comment)
 	// here 3 indicates : no of domains which don't have {{sub1}}
 	// here 1 indicates : no of patterns which have {{sub1}}
-	expectedCount2 := (len(opts.Domains)*len(opts.Patterns))*(len(DefaultWordList["word"])) - (3 * 1 * len(DefaultWordList["word"]))
+	expectedCount2 := (len(opts.Domains)*len(opts.Patterns))*(len(defaultWordList["word"])) - (3 * 1 * len(defaultWordList["word"]))
 	m, err = New(opts)
 	require.Nil(t, err)
 	require.EqualValues(t, expectedCount2, m.EstimateCount())

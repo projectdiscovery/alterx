@@ -36,16 +36,16 @@ func New(opts *Options) (*Mutator, error) {
 	}
 	if len(opts.Payloads) == 0 {
 		opts.Payloads = map[string][]string{}
-		if len(DefaultWordList) == 0 {
+		if len(DefaultConfig.Payloads) == 0 {
 			return nil, fmt.Errorf("something went wrong, `DefaultWordList` and input wordlist are empty")
 		}
-		opts.Payloads = DefaultWordList
+		opts.Payloads = DefaultConfig.Payloads
 	}
 	if len(opts.Patterns) == 0 {
-		if len(DefaultPatterns) == 0 {
+		if len(DefaultConfig.Patterns) == 0 {
 			return nil, fmt.Errorf("something went wrong,`DefaultPatters` and input patterns are empty")
 		}
-		opts.Patterns = DefaultPatterns
+		opts.Patterns = DefaultConfig.Patterns
 	}
 	m := &Mutator{
 		Options: opts,

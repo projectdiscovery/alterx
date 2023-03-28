@@ -1,47 +1,29 @@
 package main
 
 import (
-	"flag"
-	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/projectdiscovery/alterx"
+	"github.com/projectdiscovery/alterx/internal/runner"
+	"github.com/projectdiscovery/gologger"
 )
 
-type Option struct {
-	Sample  bool
-	Output  string
-	Domains string
-	Domain  string
-	Config  string
-	DryRun  bool
-}
-
 func main() {
-	opts := &Option{}
-	flag.BoolVar(&opts.Sample, "sample", false, "creates a sample config.yaml with default settings")
-	flag.StringVar(&opts.Output, "output", "", "Output file to write domains")
-	flag.StringVar(&opts.Domains, "list", "", "file containing list of domains to use as base")
-	flag.StringVar(&opts.Domain, "domain", "", "domain to use as base")
-	flag.StringVar(&opts.Config, "config", "", "config file containing payloads and patterns")
-	flag.BoolVar(&opts.DryRun, "dn", false, "dry run and only return no of payloads that will be generated (considering all  edgecases)")
-	flag.Parse()
 
-	if opts.Sample {
-		if err := alterx.GenerateSample("config.yaml"); err != nil {
-			panic(err)
-		}
-		return
+	cliOpts := runner.ParseFlags()
+
+	alterOpts := alterx.Options{
+		Domains:  cliOpts.Domains,
+		Patterns: cliOpts.Patterns,
+		Payloads: cliOpts.Payloads,
 	}
 
-	alterOpts := alterx.Options{}
-
-	if opts.Config != "" {
-		config, err := alterx.NewConfig(opts.Config)
+	if cliOpts.PermutationConfig != "" {
+		// read config
+		config, err := alterx.NewConfig(cliOpts.PermutationConfig)
 		if err != nil {
-			panic(err)
+			gologger.Fatal().Msgf("failed to read %v file got: %v", cliOpts.PermutationConfig, err)
 		}
 		if len(config.Patterns) > 0 {
 			alterOpts.Patterns = config.Patterns
@@ -51,29 +33,12 @@ func main() {
 		}
 	}
 
-	if opts.Domain != "" {
-		alterOpts.Domains = []string{opts.Domain}
-	} else if opts.Domains != "" {
-		bin, err := os.ReadFile(opts.Domains)
-		if err != nil {
-			panic(err)
-		}
-		list := []string{}
-		for _, v := range strings.Split(string(bin), "\n") {
-			v = strings.TrimSpace(v)
-			if v != "" {
-				list = append(list, v)
-			}
-		}
-		alterOpts.Domains = list
-	}
-
+	// configure output writer
 	var output io.Writer
-
-	if opts.Output != "" {
-		fs, err := os.OpenFile(opts.Output, os.O_CREATE|os.O_WRONLY, 0644)
+	if cliOpts.Output != "" {
+		fs, err := os.OpenFile(cliOpts.Output, os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			panic(err)
+			gologger.Fatal().Msgf("failed to open output file %v got %v", cliOpts.Output, err)
 		}
 		output = fs
 		defer fs.Close()
@@ -81,18 +46,18 @@ func main() {
 		output = os.Stdout
 	}
 
+	// create new alterx instance with options
 	m, err := alterx.New(&alterOpts)
 	if err != nil {
-		panic(err)
+		gologger.Fatal().Msgf("failed to parse alterx config got %v", err)
 	}
 
-	if opts.DryRun {
-		fmt.Println(m.EstimateCount())
+	if cliOpts.DryRun {
+		gologger.Info().Msgf("Estimated Payloads: %v", m.EstimateCount())
 		return
 	}
 
-	err = m.ExecuteWithWriter(output)
-	if err != nil {
-		panic(err)
+	if err = m.ExecuteWithWriter(output); err != nil {
+		gologger.Error().Msgf("failed to write output to file got %v", err)
 	}
 }

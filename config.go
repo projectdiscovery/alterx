@@ -6,6 +6,25 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// TODO: embed defaults to a config file instead of hardcoding
+var defaultWordList = map[string][]string{
+	"word": {
+		"dev", "lib", "prod", "stage", "wp",
+	},
+}
+
+var defaultPatterns = []string{
+	"{{sub}}-{{word}}.{{suffix}}", // ex: api-prod.scanme.sh
+	"{{word}}-{{sub}}.{{suffix}}", // ex: prod-api.scanme.sh
+	"{{word}}.{{sub}}.{{suffix}}", // ex: prod.api.scanme.sh
+	"{{sub}}.{{word}}.{{suffix}}", // ex: api.prod.scanme.sh
+}
+
+var DefaultConfig *Config = &Config{
+	Patterns: defaultPatterns,
+	Payloads: defaultWordList,
+}
+
 type Config struct {
 	Patterns []string            `yaml:"patterns"`
 	Payloads map[string][]string `yaml:"payloads"`
@@ -22,17 +41,4 @@ func NewConfig(filePath string) (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
-}
-
-// Generate Sample creates a sample yaml file with default/sample values
-func GenerateSample(filePath string) error {
-	cfg := Config{
-		Patterns: DefaultPatterns,
-		Payloads: DefaultWordList,
-	}
-	bin, err := yaml.Marshal(cfg)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filePath, bin, 0644)
 }
