@@ -2,14 +2,28 @@ package alterx
 
 import (
 	"os"
-	"path/filepath"
+
 	"gopkg.in/yaml.v3"
 )
 
-var (
-	DefaultConfigFilePath            = filepath.Join(getUserHomeDir(), ".config/alterx/config.yaml")
-	DefaultPermutationConfigFilePath = filepath.Join(getUserHomeDir(), ".config/alterx/permutation.yaml")
-)
+// TODO: embed defaults to a config file instead of hardcoding
+var DefaultWordList = map[string][]string{
+	"word": {
+		"dev", "lib", "prod", "stage", "wp",
+	},
+}
+
+var DefaultPatterns = []string{
+	"{{sub}}-{{word}}.{{suffix}}", // ex: api-prod.scanme.sh
+	"{{word}}-{{sub}}.{{suffix}}", // ex: prod-api.scanme.sh
+	"{{word}}.{{sub}}.{{suffix}}", // ex: prod.api.scanme.sh
+	"{{sub}}.{{word}}.{{suffix}}", // ex: api.prod.scanme.sh
+}
+
+var DefaultConfig *Config = &Config{
+	Patterns: DefaultPatterns,
+	Payloads: DefaultWordList,
+}
 
 type Config struct {
 	Patterns []string            `yaml:"patterns"`
@@ -27,25 +41,4 @@ func NewConfig(filePath string) (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
-}
-
-// Generate Sample creates a sample yaml file with default/sample values
-func GenerateSample(filePath string) error {
-	cfg := Config{
-		Patterns: DefaultPatterns,
-		Payloads: DefaultWordList,
-	}
-	bin, err := yaml.Marshal(cfg)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filePath, bin, 0644)
-}
-
-func getUserHomeDir() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		panic(err)
-	}
-	return homeDir
 }
