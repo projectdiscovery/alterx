@@ -32,11 +32,12 @@ func ParseFlags() *Options {
 
 	flagSet.CreateGroup("input", "Input",
 		flagSet.StringSliceVarP(&opts.Domains, "list", "l", nil, "subdomains to use when creating permutations (comma-separated, file)", goflags.FileCommaSeparatedStringSliceOptions),
-		flagSet.RuntimeMapVarP(&opts.wordlists, "payload", "pp", nil, "payloads in pattern to replace/use in key=value format (-w 'words=words.txt')"),
 		flagSet.StringSliceVarP(&opts.Patterns, "pattern", "p", nil, "input patterns for alterx (comma-seperated, file)", goflags.FileCommaSeparatedStringSliceOptions),
+		flagSet.RuntimeMapVarP(&opts.wordlists, "payload", "pp", nil, "payloads in pattern to replace/use in key=value format (-pp 'words=words.txt')"),
 	)
 
 	flagSet.CreateGroup("output", "Output",
+		flagSet.BoolVarP(&opts.DryRun, "count", "c", false, "display count of generated payloads permutation"),
 		flagSet.StringVarP(&opts.Output, "output", "o", "", "output file to write altered subdomain list"),
 		flagSet.BoolVarP(&opts.Verbose, "verbose", "v", false, "display verbose output"),
 		flagSet.CallbackVar(printVersion, "version", "display alterx version"),
@@ -45,12 +46,11 @@ func ParseFlags() *Options {
 	flagSet.CreateGroup("config", "Config",
 		flagSet.StringVar(&opts.Config, "config", "", `alterx cli config file (default '$HOME/.config/alterx/config.yaml')`),
 		flagSet.StringVar(&opts.PermutationConfig, "ac", "", `alterx permutation config file (default '$HOME/.config/alterx/permutation_vxxx.yaml')`),
-		flagSet.BoolVarP(&opts.DryRun, "dry-run", "dr", false, "dry run and only return generated permutation counter"),
 	)
 
 	flagSet.CreateGroup("update", "Update",
 		flagSet.CallbackVarP(GetUpdateCallback(), "update", "up", "update alterx to latest version"),
-		flagSet.BoolVarP(&opts.DisableUpdateCheck, "disable-update-check", "duc", false, "disable automatic katana update check"),
+		flagSet.BoolVarP(&opts.DisableUpdateCheck, "disable-update-check", "duc", false, "disable automatic alterx update check"),
 	)
 
 	if err := flagSet.Parse(); err != nil {
