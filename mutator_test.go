@@ -12,7 +12,16 @@ func TestMutatorCount(t *testing.T) {
 	opts := &Options{
 		Domains: []string{"api.scanme.sh", "chaos.scanme.sh", "nuclei.scanme.sh", "cloud.nuclei.scanme.sh"},
 	}
-	expectedCount := len(DefaultPatterns) * len(DefaultWordList) * len(opts.Domains)
+	// Default patterns:
+	// {{sub}}-{{word}}.{{suffix}}
+	// {{word}}-{{sub}}.{{suffix}}
+	// {{word}}.{{sub}}.{{suffix}}
+	// {{sub}}.{{word}}.{{suffix}}
+	// Here len(DefaultWordList["word"]) used since in default patterns ^
+	// there's only one different-var(which can't derived from domain) is used which is {{word}}.
+	// If the pattern is '{{sub}}.{{word}}.{{year}}.{{suffix}}' then
+	// expectedCount = len(Patterns) * (len(WordList["word"])+len(WordList["year"]))* len(opts.Domains)
+	expectedCount := len(DefaultPatterns) * len(DefaultWordList["word"]) * len(opts.Domains)
 	m, err := New(opts)
 	require.Nil(t, err)
 	require.EqualValues(t, expectedCount, m.EstimateCount())
@@ -26,9 +35,9 @@ func TestMutatorCount(t *testing.T) {
 		"{{sub}}.{{word}}-{{sub1}}.{{root}}", // ex: cloud.nuclei-dev.scanme.sh
 	}
 	// in this case count will be totally different since ^(comment)
-	// here 4 indicates : no of patterns which don't have {{sub1}}
-	// here 1 and 1 indicates no of patterns and domains which have {{sub1}}
-	expectedCount2 := (4 * len(opts.Domains) * len(DefaultWordList)) + (1 * 1 * len(DefaultWordList))
+	// here 3 indicates : no of domains which don't have {{sub1}}
+	// here 1 indicates : no of patterns which have {{sub1}}
+	expectedCount2 := (len(opts.Domains)*len(opts.Patterns))*(len(DefaultWordList["word"])) - (3 * 1 * len(DefaultWordList["word"]))
 	m, err = New(opts)
 	require.Nil(t, err)
 	require.EqualValues(t, expectedCount2, m.EstimateCount())
