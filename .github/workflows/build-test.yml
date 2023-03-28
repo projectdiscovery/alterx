@@ -31,7 +31,7 @@ jobs:
 
       - name: Build
         run: go run .
-        working-directory: cmd/examples/
+        working-directory: examples/
 
       - name: Install
         run: go install
