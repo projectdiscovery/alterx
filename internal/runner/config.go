@@ -23,7 +23,14 @@ func init() {
 	defaultPermutationCfg := filepath.Join(getUserHomeDir(), fmt.Sprintf(".config/alterx/permutation_%v.yaml", version))
 	// create default permutation.yaml config if does not exist
 	if fileutil.FileExists(defaultPermutationCfg) {
-		return
+		// if it exists use that data as default
+		if bin, err := os.ReadFile(defaultPermutationCfg); err == nil {
+			var cfg alterx.Config
+			if errx := yaml.Unmarshal(bin, &cfg); errx == nil {
+				alterx.DefaultConfig = &cfg
+				return
+			}
+		}
 	}
 	bin, err := yaml.Marshal(alterx.DefaultConfig)
 	if err != nil {

@@ -12,7 +12,7 @@ func TestMutatorCount(t *testing.T) {
 	opts := &Options{
 		Domains: []string{"api.scanme.sh", "chaos.scanme.sh", "nuclei.scanme.sh", "cloud.nuclei.scanme.sh"},
 	}
-	expectedCount := len(DefaultPatterns) * len(DefaultWordList) * len(opts.Domains)
+	expectedCount := len(defaultPatterns) * len(defaultWordList) * len(opts.Domains)
 	m, err := New(opts)
 	require.Nil(t, err)
 	require.EqualValues(t, expectedCount, m.EstimateCount())
@@ -28,7 +28,7 @@ func TestMutatorCount(t *testing.T) {
 	// in this case count will be totally different since ^(comment)
 	// here 4 indicates : no of patterns which don't have {{sub1}}
 	// here 1 and 1 indicates no of patterns and domains which have {{sub1}}
-	expectedCount2 := (4 * len(opts.Domains) * len(DefaultWordList)) + (1 * 1 * len(DefaultWordList))
+	expectedCount2 := (4 * len(opts.Domains) * len(defaultWordList)) + (1 * 1 * len(defaultWordList))
 	m, err = New(opts)
 	require.Nil(t, err)
 	require.EqualValues(t, expectedCount2, m.EstimateCount())

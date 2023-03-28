@@ -32,7 +32,7 @@ func ParseFlags() *Options {
 
 	flagSet.CreateGroup("input", "Input",
 		flagSet.StringSliceVarP(&opts.Domains, "list", "l", nil, "subdomains to use when creating permutations (comma-separated, file)", goflags.FileCommaSeparatedStringSliceOptions),
-		flagSet.RuntimeMapVarP(&opts.wordlists, "word", "w", nil, "payloads to replace/use in key=value format (-w 'words=words.txt')"),
+		flagSet.RuntimeMapVarP(&opts.wordlists, "payload", "pp", nil, "payloads in pattern to replace/use in key=value format (-w 'words=words.txt')"),
 		flagSet.StringSliceVarP(&opts.Patterns, "pattern", "p", nil, "input patterns for alterx (comma-seperated, file)", goflags.FileCommaSeparatedStringSliceOptions),
 	)
 
@@ -45,7 +45,7 @@ func ParseFlags() *Options {
 	flagSet.CreateGroup("config", "Config",
 		flagSet.StringVar(&opts.Config, "config", "", `alterx cli config file (default '$HOME/.config/alterx/config.yaml')`),
 		flagSet.StringVar(&opts.PermutationConfig, "ac", "", `alterx permutation config file (default '$HOME/.config/alterx/permutation_vxxx.yaml')`),
-		flagSet.BoolVarP(&opts.DryRun, "dry-run", "dn", false, "dry run and only return generated permutation counter"),
+		flagSet.BoolVarP(&opts.DryRun, "dry-run", "dr", false, "dry run and only return generated permutation counter"),
 	)
 
 	flagSet.CreateGroup("update", "Update",

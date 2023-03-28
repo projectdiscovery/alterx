@@ -7,13 +7,13 @@ import (
 )
 
 // TODO: embed defaults to a config file instead of hardcoding
-var DefaultWordList = map[string][]string{
+var defaultWordList = map[string][]string{
 	"word": {
 		"dev", "lib", "prod", "stage", "wp",
 	},
 }
 
-var DefaultPatterns = []string{
+var defaultPatterns = []string{
 	"{{sub}}-{{word}}.{{suffix}}", // ex: api-prod.scanme.sh
 	"{{word}}-{{sub}}.{{suffix}}", // ex: prod-api.scanme.sh
 	"{{word}}.{{sub}}.{{suffix}}", // ex: prod.api.scanme.sh
@@ -21,8 +21,8 @@ var DefaultPatterns = []string{
 }
 
 var DefaultConfig *Config = &Config{
-	Patterns: DefaultPatterns,
-	Payloads: DefaultWordList,
+	Patterns: defaultPatterns,
+	Payloads: defaultWordList,
 }
 
 type Config struct {
