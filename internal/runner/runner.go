@@ -21,6 +21,7 @@ type Options struct {
 	DryRun             bool
 	DisableUpdateCheck bool
 	Verbose            bool
+	Limit              int
 	// internal/unexported fields
 	wordlists goflags.RuntimeMap
 }
@@ -46,6 +47,7 @@ func ParseFlags() *Options {
 	flagSet.CreateGroup("config", "Config",
 		flagSet.StringVar(&opts.Config, "config", "", `alterx cli config file (default '$HOME/.config/alterx/config.yaml')`),
 		flagSet.StringVar(&opts.PermutationConfig, "ac", "", `alterx permutation config file (default '$HOME/.config/alterx/permutation_vxxx.yaml')`),
+		flagSet.IntVar(&opts.Limit, "limit", 0, "limit the number of results to return (default 0)"),
 	)
 
 	flagSet.CreateGroup("update", "Update",

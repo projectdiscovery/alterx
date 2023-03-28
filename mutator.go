@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/projectdiscovery/fasttemplate"
 	"github.com/projectdiscovery/gologger"
@@ -20,6 +21,7 @@ type Options struct {
 	// list of pattersn to use while creating permutations
 	// if empty DefaultPatterns are used
 	Patterns []string
+	Limit    int
 }
 
 // Mutator
@@ -61,21 +63,25 @@ func New(opts *Options) (*Mutator, error) {
 
 // Execute calculates all permutations using input wordlist and patterns
 // and writes them to a string channel
-func (m *Mutator) Execute() <-chan string {
+func (m *Mutator) Execute(doneChan chan bool) <-chan string {
 	results := make(chan string, len(m.Options.Patterns))
+
+	wg := sync.WaitGroup{}
 	go func() {
 		for _, v := range m.Inputs {
 			varMap := getSampleMap(v.GetMap(), m.Options.Payloads)
 			for _, pattern := range m.Options.Patterns {
 				if err := checkMissing(pattern, varMap); err == nil {
 					statement := Replace(pattern, v.GetMap())
-					m.clusterBomb(statement, results)
+					wg.Add(1)
+					go m.clusterBomb(statement, results, doneChan, &wg)
 				} else {
 					gologger.Warning().Msgf("variables missing to evaluate pattern `%v` got: %v, skipping", pattern, err.Error())
 				}
 			}
 			// replace all
 		}
+		wg.Wait()
 		close(results)
 	}()
 	return results
@@ -86,13 +92,21 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 	if Writer == nil {
 		return errorutil.NewWithTag("alterx", "writer destination cannot be nil")
 	}
-	resChan := m.Execute()
+	doneChan := make(chan bool)
+	resChan := m.Execute(doneChan)
+	
+	counter := 0
 	for {
 		value, ok := <-resChan
 		if !ok {
 			return nil
 		}
+		if m.Options.Limit > 0 && counter == m.Options.Limit {
+			close(doneChan)
+			return nil
+		}
 		_, err := Writer.Write([]byte(value + "\n"))
+		counter++
 		if err != nil {
 			return err
 		}
@@ -132,30 +146,36 @@ func (m *Mutator) EstimateCount() int {
 }
 
 // clusterBomb calculates all payloads of clusterbomb attack and sends them to result channel
-func (m *Mutator) clusterBomb(template string, results chan string) {
-	// Early Exit: this is what saves clusterBomb from stackoverflows and reduces
-	// n*len(n) iterations and n recursions
-	varsUsed := getAllVars(template)
-	if len(varsUsed) == 0 {
-		// clusterBomb is not required
-		// just send existing template as result and exit
-		results <- template
+func (m *Mutator) clusterBomb(template string, results chan string, doneChan chan bool, wg *sync.WaitGroup) {
+	defer wg.Done()
+	select {
+	case <-doneChan:
 		return
+	default:
+		// Early Exit: this is what saves clusterBomb from stackoverflows and reduces
+		// n*len(n) iterations and n recursions
+		varsUsed := getAllVars(template)
+		if len(varsUsed) == 0 {
+			// clusterBomb is not required
+			// just send existing template as result and exit
+			results <- template
+			return
+		}
+		payloadSet := map[string][]string{}
+		// instead of sending all payloads only send payloads that are used
+		// in template/statement
+		for _, v := range varsUsed {
+			payloadSet[v] = []string{}
+			payloadSet[v] = append(payloadSet[v], m.Options.Payloads[v]...)
+		}
+		payloads := NewIndexMap(payloadSet)
+		// in clusterBomb attack no of payloads generated are
+		// len(first_set)*len(second_set)*len(third_set)....
+		callbackFunc := func(varMap map[string]interface{}) {
+			results <- Replace(template, varMap)
+		}
+		ClusterBomb(payloads, callbackFunc, []string{})
 	}
-	payloadSet := map[string][]string{}
-	// instead of sending all payloads only send payloads that are used
-	// in template/statement
-	for _, v := range varsUsed {
-		payloadSet[v] = []string{}
-		payloadSet[v] = append(payloadSet[v], m.Options.Payloads[v]...)
-	}
-	payloads := NewIndexMap(payloadSet)
-	// in clusterBomb attack no of payloads generated are
-	// len(first_set)*len(second_set)*len(third_set)....
-	callbackFunc := func(varMap map[string]interface{}) {
-		results <- Replace(template, varMap)
-	}
-	ClusterBomb(payloads, callbackFunc, []string{})
 }
 
 // prepares input and patterns and calculates estimations
