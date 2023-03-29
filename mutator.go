@@ -21,7 +21,8 @@ type Options struct {
 	// list of pattersn to use while creating permutations
 	// if empty DefaultPatterns are used
 	Patterns []string
-	Limit    int
+	// Limits output results (0 = no limit)
+	Limit int
 }
 
 // Mutator
@@ -61,9 +62,9 @@ func New(opts *Options) (*Mutator, error) {
 	return m, nil
 }
 
-// ExecuteWithContext calculates all permutations using input wordlist and patterns
+// Execute calculates all permutations using input wordlist and patterns
 // and writes them to a string channel
-func (m *Mutator) ExecuteWithContext(ctx context.Context) <-chan string {
+func (m *Mutator) Execute(ctx context.Context) <-chan string {
 	results := make(chan string, len(m.Options.Patterns))
 	go func() {
 		for _, v := range m.Inputs {
@@ -81,7 +82,6 @@ func (m *Mutator) ExecuteWithContext(ctx context.Context) <-chan string {
 					gologger.Warning().Msgf("variables missing to evaluate pattern `%v` got: %v, skipping", pattern, err.Error())
 				}
 			}
-			// replace all
 		}
 		close(results)
 	}()
@@ -90,13 +90,10 @@ func (m *Mutator) ExecuteWithContext(ctx context.Context) <-chan string {
 
 // ExecuteWithWriter executes Mutator and writes results directly to type that implements io.Writer interface
 func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	
 	if Writer == nil {
 		return errorutil.NewWithTag("alterx", "writer destination cannot be nil")
 	}
-	resChan := m.ExecuteWithContext(ctx)
+	resChan := m.Execute(context.TODO())
 	counter := 0
 	for {
 		value, ok := <-resChan
