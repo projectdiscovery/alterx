@@ -1,6 +1,7 @@
 package alterx
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -20,6 +21,8 @@ type Options struct {
 	// list of pattersn to use while creating permutations
 	// if empty DefaultPatterns are used
 	Patterns []string
+	// Limits output results (0 = no limit)
+	Limit int
 }
 
 // Mutator
@@ -61,7 +64,7 @@ func New(opts *Options) (*Mutator, error) {
 
 // Execute calculates all permutations using input wordlist and patterns
 // and writes them to a string channel
-func (m *Mutator) Execute() <-chan string {
+func (m *Mutator) Execute(ctx context.Context) <-chan string {
 	results := make(chan string, len(m.Options.Patterns))
 	go func() {
 		for _, v := range m.Inputs {
@@ -69,12 +72,16 @@ func (m *Mutator) Execute() <-chan string {
 			for _, pattern := range m.Options.Patterns {
 				if err := checkMissing(pattern, varMap); err == nil {
 					statement := Replace(pattern, v.GetMap())
-					m.clusterBomb(statement, results)
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						m.clusterBomb(statement, results)
+					}
 				} else {
 					gologger.Warning().Msgf("variables missing to evaluate pattern `%v` got: %v, skipping", pattern, err.Error())
 				}
 			}
-			// replace all
 		}
 		close(results)
 	}()
@@ -86,13 +93,18 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 	if Writer == nil {
 		return errorutil.NewWithTag("alterx", "writer destination cannot be nil")
 	}
-	resChan := m.Execute()
+	resChan := m.Execute(context.TODO())
+	counter := 0
 	for {
 		value, ok := <-resChan
 		if !ok {
 			return nil
 		}
+		if m.Options.Limit > 0 && counter == m.Options.Limit {
+			return nil
+		}
 		_, err := Writer.Write([]byte(value + "\n"))
+		counter++
 		if err != nil {
 			return err
 		}

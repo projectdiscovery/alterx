@@ -17,6 +17,7 @@ func main() {
 		Domains:  cliOpts.Domains,
 		Patterns: cliOpts.Patterns,
 		Payloads: cliOpts.Payloads,
+		Limit:    cliOpts.Limit,
 	}
 
 	if cliOpts.PermutationConfig != "" {
