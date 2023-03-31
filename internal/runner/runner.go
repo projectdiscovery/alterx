@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -21,6 +22,7 @@ type Options struct {
 	DryRun             bool
 	DisableUpdateCheck bool
 	Verbose            bool
+	Enrich             bool
 	Limit              int
 	// internal/unexported fields
 	wordlists goflags.RuntimeMap
@@ -34,7 +36,7 @@ func ParseFlags() *Options {
 	flagSet.CreateGroup("input", "Input",
 		flagSet.StringSliceVarP(&opts.Domains, "list", "l", nil, "subdomains to use when creating permutations (comma-separated, file)", goflags.FileCommaSeparatedStringSliceOptions),
 		flagSet.StringSliceVarP(&opts.Patterns, "pattern", "p", nil, "input patterns for alterx (comma-seperated, file)", goflags.FileCommaSeparatedStringSliceOptions),
-		flagSet.RuntimeMapVarP(&opts.wordlists, "payload", "pp", nil, "payloads in pattern to replace/use in key=value format (-pp 'words=words.txt')"),
+		flagSet.RuntimeMapVarP(&opts.wordlists, "payload", "pp", nil, "payloads in pattern to replace/use in key=value format (-pp 'word=words.txt')"),
 	)
 
 	flagSet.CreateGroup("output", "Output",
@@ -46,7 +48,8 @@ func ParseFlags() *Options {
 
 	flagSet.CreateGroup("config", "Config",
 		flagSet.StringVar(&opts.Config, "config", "", `alterx cli config file (default '$HOME/.config/alterx/config.yaml')`),
-		flagSet.StringVar(&opts.PermutationConfig, "ac", "", `alterx permutation config file (default '$HOME/.config/alterx/permutation_vxxx.yaml')`),
+		flagSet.BoolVarP(&opts.Enrich, "enrich", "e", false, "enrich wordlist by extracting words from input"),
+		flagSet.StringVar(&opts.PermutationConfig, "ac", "", fmt.Sprintf(`alterx permutation config file (default '$HOME/.config/alterx/permutation_%v.yaml')`, version)),
 		flagSet.IntVar(&opts.Limit, "limit", 0, "limit the number of results to return (default 0)"),
 	)
 

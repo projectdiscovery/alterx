@@ -27,16 +27,12 @@ func init() {
 		if bin, err := os.ReadFile(defaultPermutationCfg); err == nil {
 			var cfg alterx.Config
 			if errx := yaml.Unmarshal(bin, &cfg); errx == nil {
-				alterx.DefaultConfig = &cfg
+				alterx.DefaultConfig = cfg
 				return
 			}
 		}
 	}
-	bin, err := yaml.Marshal(alterx.DefaultConfig)
-	if err != nil {
-		gologger.Fatal().Msgf("failed to marshal defaultConfig got %v", err)
-	}
-	if err := os.WriteFile(defaultPermutationCfg, bin, 0600); err != nil {
+	if err := os.WriteFile(defaultPermutationCfg, alterx.DefaultPermutationsBin, 0600); err != nil {
 		gologger.Error().Msgf("failed to save default config to %v got: %v", defaultPermutationCfg, err)
 	}
 }

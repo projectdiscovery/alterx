@@ -18,6 +18,7 @@ func main() {
 		Patterns: cliOpts.Patterns,
 		Payloads: cliOpts.Payloads,
 		Limit:    cliOpts.Limit,
+		Enrich:   cliOpts.Enrich, // enrich payloads
 	}
 
 	if cliOpts.PermutationConfig != "" {

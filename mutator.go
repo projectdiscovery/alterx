@@ -1,14 +1,22 @@
 package alterx
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	"github.com/projectdiscovery/fasttemplate"
 	"github.com/projectdiscovery/gologger"
 	errorutil "github.com/projectdiscovery/utils/errors"
+	sliceutil "github.com/projectdiscovery/utils/slice"
+)
+
+var (
+	extractNumbers = regexp.MustCompile(`[0-9]+`)
+	extractWords   = regexp.MustCompile(`[a-zA-Z0-9]+`)
 )
 
 // Mutator Options
@@ -23,6 +31,9 @@ type Options struct {
 	Patterns []string
 	// Limits output results (0 = no limit)
 	Limit int
+	// Enrich when true alterx extra possible words from input
+	// and adds them to default payloads word,number
+	Enrich bool
 }
 
 // Mutator
@@ -50,6 +61,14 @@ func New(opts *Options) (*Mutator, error) {
 		}
 		opts.Patterns = DefaultConfig.Patterns
 	}
+	// purge duplicates if any
+	for k, v := range opts.Payloads {
+		dedupe := sliceutil.Dedupe(v)
+		if len(v) != len(dedupe) {
+			gologger.Warning().Msgf("%v duplicate payloads found in %v. purging them..", len(v)-len(dedupe), k)
+			opts.Payloads[k] = dedupe
+		}
+	}
 	m := &Mutator{
 		Options: opts,
 	}
@@ -58,6 +77,9 @@ func New(opts *Options) (*Mutator, error) {
 	}
 	if err := m.prepareInputs(); err != nil {
 		return nil, err
+	}
+	if opts.Enrich {
+		m.enrichPayloads()
 	}
 	return m, nil
 }
@@ -115,29 +137,13 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 // and saves to be used later on with `PayloadCount()` method
 func (m *Mutator) EstimateCount() int {
 	counter := 0
-	for _, v := range m.Inputs {
-		varMap := getSampleMap(v.GetMap(), m.Options.Payloads)
-		for _, pattern := range m.Options.Patterns {
-			if err := checkMissing(pattern, varMap); err == nil {
-				// if say patterns is {{sub}}.{{sub1}}-{{word}}.{{root}}
-				// and input domain is api.scanme.sh its clear that {{sub1}} here will be empty/missing
-				// in such cases `alterx` silently skips that pattern for that specific input
-				// this way user can have a long list of patterns but they are only used if all required data is given (much like self-contained templates)
-				statement := Replace(pattern, v.GetMap())
-				varsUsed := getAllVars(statement)
-				if len(varsUsed) == 0 {
-					counter += 1
-				} else {
-					tmpCounter := 1
-					for _, word := range varsUsed {
-						tmpCounter *= len(m.Options.Payloads[word])
-					}
-					counter += tmpCounter
-				}
-			} else {
-				gologger.Warning().Msgf("skipping pattern `%v` got %v", pattern, err)
-			}
+	ch := m.Execute(context.Background())
+	for {
+		_, ok := <-ch
+		if !ok {
+			break
 		}
+		counter++
 	}
 	m.payloadCount = counter
 	return counter
@@ -159,7 +165,13 @@ func (m *Mutator) clusterBomb(template string, results chan string) {
 	// in template/statement
 	for _, v := range varsUsed {
 		payloadSet[v] = []string{}
-		payloadSet[v] = append(payloadSet[v], m.Options.Payloads[v]...)
+		for _, word := range m.Options.Payloads[v] {
+			if !strings.Contains(template, word) {
+				// skip all words that are already present in template/sub , it is highly unlikely
+				// we will ever find api-api.example.com
+				payloadSet[v] = append(payloadSet[v], word)
+			}
+		}
 	}
 	payloads := NewIndexMap(payloadSet)
 	// in clusterBomb attack no of payloads generated are
@@ -201,7 +213,31 @@ func (m *Mutator) validatePatterns() error {
 	return nil
 }
 
+func (m *Mutator) enrichPayloads() {
+	var temp bytes.Buffer
+	for _, v := range m.Inputs {
+		temp.WriteString(v.Sub + " ")
+		if len(v.MultiLevel) > 0 {
+			temp.WriteString(strings.Join(v.MultiLevel, " "))
+		}
+	}
+	numbers := extractNumbers.FindAllString(temp.String(), -1)
+	extraWords := extractWords.FindAllString(temp.String(), -1)
+
+	if len(m.Options.Payloads["word"]) > 0 {
+		extraWords = append(extraWords, m.Options.Payloads["word"]...)
+		m.Options.Payloads["word"] = sliceutil.Dedupe(extraWords)
+	}
+	if len(m.Options.Payloads["number"]) > 0 {
+		numbers = append(numbers, m.Options.Payloads["number"]...)
+		m.Options.Payloads["number"] = sliceutil.Dedupe(numbers)
+	}
+}
+
 // PayloadCount returns total estimated payloads count
 func (m *Mutator) PayloadCount() int {
+	if m.payloadCount == 0 {
+		m.EstimateCount()
+	}
 	return m.payloadCount
 }

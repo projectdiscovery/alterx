@@ -3,27 +3,17 @@ package alterx
 import (
 	"os"
 
+	_ "embed"
+
+	"github.com/projectdiscovery/gologger"
 	"gopkg.in/yaml.v3"
 )
 
-// TODO: embed defaults to a config file instead of hardcoding
-var defaultWordList = map[string][]string{
-	"word": {
-		"dev", "lib", "prod", "stage", "wp",
-	},
-}
+//go:embed permutations.yaml
+var DefaultPermutationsBin []byte
 
-var defaultPatterns = []string{
-	"{{sub}}-{{word}}.{{suffix}}", // ex: api-prod.scanme.sh
-	"{{word}}-{{sub}}.{{suffix}}", // ex: prod-api.scanme.sh
-	"{{word}}.{{sub}}.{{suffix}}", // ex: prod.api.scanme.sh
-	"{{sub}}.{{word}}.{{suffix}}", // ex: api.prod.scanme.sh
-}
-
-var DefaultConfig *Config = &Config{
-	Patterns: defaultPatterns,
-	Payloads: defaultWordList,
-}
+// DefaultConfig contains default patterns and payloads
+var DefaultConfig Config
 
 type Config struct {
 	Patterns []string            `yaml:"patterns"`
@@ -41,4 +31,10 @@ func NewConfig(filePath string) (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+func init() {
+	if err := yaml.Unmarshal(DefaultPermutationsBin, &DefaultConfig); err != nil {
+		gologger.Error().Msgf("default wordlist not found: got %v", err)
+	}
 }
