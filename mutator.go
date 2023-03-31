@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	extractNumbers = regexp.MustCompile(`[0-9]+`)
-	extractWords   = regexp.MustCompile(`[a-zA-Z0-9]+`)
+	extractNumbers   = regexp.MustCompile(`[0-9]+`)
+	extractWords     = regexp.MustCompile(`[a-zA-Z0-9]+`)
+	extractWordsOnly = regexp.MustCompile(`[a-zA-Z]{3,}`)
 )
 
 // Mutator Options
@@ -223,6 +224,11 @@ func (m *Mutator) enrichPayloads() {
 	}
 	numbers := extractNumbers.FindAllString(temp.String(), -1)
 	extraWords := extractWords.FindAllString(temp.String(), -1)
+	extraWordsOnly := extractWordsOnly.FindAllString(temp.String(), -1)
+	if len(extraWordsOnly) > 0 {
+		extraWords = append(extraWords, extraWordsOnly...)
+		extraWords = sliceutil.Dedupe(extraWords)
+	}
 
 	if len(m.Options.Payloads["word"]) > 0 {
 		extraWords = append(extraWords, m.Options.Payloads["word"]...)
