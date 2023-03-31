@@ -1,10 +1,9 @@
 package alterx
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
-
-	errorutil "github.com/projectdiscovery/utils/errors"
 )
 
 var varRegex = regexp.MustCompile(`\{\{([a-zA-Z0-9]+)\}\}`)
@@ -44,7 +43,7 @@ func getSampleMap(inputVars map[string]interface{}, payloadVars map[string][]str
 func checkMissing(template string, data map[string]interface{}) error {
 	got := Replace(template, data)
 	if res := varRegex.FindAllString(got, -1); len(res) > 0 {
-		return errorutil.NewWithTag("alterx", "missing `%v` variables", strings.Join(res, ","))
+		return fmt.Errorf("values of `%v` variables not found", strings.Join(res, ","))
 	}
 	return nil
 }

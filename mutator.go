@@ -7,6 +7,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/projectdiscovery/fasttemplate"
 	"github.com/projectdiscovery/gologger"
@@ -42,6 +43,7 @@ type Mutator struct {
 	Options      *Options
 	payloadCount int
 	Inputs       []*Input // all processed inputs
+	timeTaken    time.Duration
 }
 
 // New creates and returns new mutator instance from options
@@ -90,6 +92,7 @@ func New(opts *Options) (*Mutator, error) {
 func (m *Mutator) Execute(ctx context.Context) <-chan string {
 	results := make(chan string, len(m.Options.Patterns))
 	go func() {
+		now := time.Now()
 		for _, v := range m.Inputs {
 			varMap := getSampleMap(v.GetMap(), m.Options.Payloads)
 			for _, pattern := range m.Options.Patterns {
@@ -102,10 +105,11 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 						m.clusterBomb(statement, results)
 					}
 				} else {
-					gologger.Warning().Msgf("variables missing to evaluate pattern `%v` got: %v, skipping", pattern, err.Error())
+					gologger.Warning().Msgf("%v : failed to evaluate pattern %v. skipping", err.Error(), pattern)
 				}
 			}
 		}
+		m.timeTaken = time.Since(now)
 		close(results)
 	}()
 	return results
@@ -117,17 +121,17 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 		return errorutil.NewWithTag("alterx", "writer destination cannot be nil")
 	}
 	resChan := m.Execute(context.TODO())
-	counter := 0
+	m.payloadCount = 0
 	for {
 		value, ok := <-resChan
 		if !ok {
 			return nil
 		}
-		if m.Options.Limit > 0 && counter == m.Options.Limit {
+		if m.Options.Limit > 0 && m.payloadCount == m.Options.Limit {
 			return nil
 		}
 		_, err := Writer.Write([]byte(value + "\n"))
-		counter++
+		m.payloadCount++
 		if err != nil {
 			return err
 		}
@@ -137,17 +141,16 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 // EstimateCount estimates number of payloads that will be created
 // and saves to be used later on with `PayloadCount()` method
 func (m *Mutator) EstimateCount() int {
-	counter := 0
+	m.payloadCount = 0
 	ch := m.Execute(context.Background())
 	for {
 		_, ok := <-ch
 		if !ok {
 			break
 		}
-		counter++
+		m.payloadCount++
 	}
-	m.payloadCount = counter
-	return counter
+	return m.payloadCount
 }
 
 // clusterBomb calculates all payloads of clusterbomb attack and sends them to result channel
@@ -246,4 +249,8 @@ func (m *Mutator) PayloadCount() int {
 		m.EstimateCount()
 	}
 	return m.payloadCount
+}
+
+func (m *Mutator) Time() string {
+	return fmt.Sprintf("%.4fs", m.timeTaken.Seconds())
 }

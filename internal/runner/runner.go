@@ -8,6 +8,7 @@ import (
 
 	"github.com/projectdiscovery/goflags"
 	"github.com/projectdiscovery/gologger"
+	"github.com/projectdiscovery/gologger/levels"
 	fileutil "github.com/projectdiscovery/utils/file"
 	updateutils "github.com/projectdiscovery/utils/update"
 )
@@ -22,6 +23,7 @@ type Options struct {
 	DryRun             bool
 	DisableUpdateCheck bool
 	Verbose            bool
+	Silent             bool
 	Enrich             bool
 	Limit              int
 	// internal/unexported fields
@@ -43,6 +45,7 @@ func ParseFlags() *Options {
 		flagSet.BoolVarP(&opts.DryRun, "count", "c", false, "display count of generated payloads permutation"),
 		flagSet.StringVarP(&opts.Output, "output", "o", "", "output file to write altered subdomain list"),
 		flagSet.BoolVarP(&opts.Verbose, "verbose", "v", false, "display verbose output"),
+		flagSet.BoolVar(&opts.Silent, "silent", false, "display results only"),
 		flagSet.CallbackVar(printVersion, "version", "display alterx version"),
 	)
 
@@ -68,6 +71,11 @@ func ParseFlags() *Options {
 		}
 	}
 
+	if opts.Silent {
+		gologger.DefaultLogger.SetMaxLevel(levels.LevelSilent)
+	} else if opts.Verbose {
+		gologger.DefaultLogger.SetMaxLevel(levels.LevelVerbose)
+	}
 	showBanner()
 
 	if !opts.DisableUpdateCheck {

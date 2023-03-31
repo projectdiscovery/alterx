@@ -74,22 +74,33 @@ pattern in simple terms can be considered as `template` that describes what type
 ## Usage
 
 ```console
-$ ./alterx -h
+Fast and customizable subdomain wordlist generator using DSL.
 
-Usage of ./alterx:
-  -config string
-    	config file containing payloads and patterns
-  -dn
-    	dry run and only return no of payloads that will be generated (considering all  edgecases)
-  -domain string
-    	domain to use as base
-  -list string
-    	file containing list of domains to use as base
-  -output string
-    	Output file to write domains
-  -sample
-    	creates a sample config.yaml with default settings
+Usage:
+  ./alterx [flags]
 
+Flags:
+INPUT:
+   -l, -list string[]     subdomains to use when creating permutations (comma-separated, file)
+   -p, -pattern string[]  input patterns for alterx (comma-seperated, file)
+   -pp, -payload value    payloads in pattern to replace/use in key=value format (-pp 'word=words.txt')
+
+OUTPUT:
+   -c, -count          display count of generated payloads permutation
+   -o, -output string  output file to write altered subdomain list
+   -v, -verbose        display verbose output
+   -silent             display results only
+   -version            display alterx version
+
+CONFIG:
+   -config string  alterx cli config file (default '$HOME/.config/alterx/config.yaml')
+   -e, -enrich     enrich wordlist by extracting words from input
+   -ac string      alterx permutation config file (default '$HOME/.config/alterx/permutation_v0.0.1.yaml')
+   -limit int      limit the number of results to return (default 0)
+
+UPDATE:
+   -up, -update                 update alterx to latest version
+   -duc, -disable-update-check  disable automatic alterx update check
 ```
 
 ```console

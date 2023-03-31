@@ -62,4 +62,5 @@ func main() {
 	if err = m.ExecuteWithWriter(output); err != nil {
 		gologger.Error().Msgf("failed to write output to file got %v", err)
 	}
+	gologger.Info().Msgf("Generated %v permutations in %v", m.PayloadCount(), m.Time())
 }

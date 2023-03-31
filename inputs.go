@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	errorutil "github.com/projectdiscovery/utils/errors"
+	"github.com/projectdiscovery/gologger"
 	urlutil "github.com/projectdiscovery/utils/url"
 	"golang.org/x/net/publicsuffix"
 )
@@ -57,7 +57,9 @@ func NewInput(inpurURL string) (*Input, error) {
 	}
 	rootDomain, err := publicsuffix.EffectiveTLDPlusOne(URL.Hostname())
 	if err != nil {
-		return nil, errorutil.NewWithErr(err).Msgf("failed to extra eTLD+1 for %v", URL.Hostname())
+		// this happens if input domain does not have eTLD+1 at all ex: `.com` or `co.uk`
+		gologger.Warning().Msgf("input domain %v is eTLD/publicsuffix and not a valid domain name", URL.Hostname())
+		return ivar, nil
 	}
 	ivar.Root = rootDomain
 	// anything before root domain is subdomain
