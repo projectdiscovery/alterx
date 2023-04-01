@@ -38,5 +38,5 @@ jobs:
         working-directory: cmd/alterx/
 
       - name: Race Condition Tests
-        run: go run -race . -list www.scanme.sh
+        run: echo "www.scanme.sh" | go run -race .
         working-directory: cmd/alterx/
