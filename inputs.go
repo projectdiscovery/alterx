@@ -41,8 +41,8 @@ func (i *Input) GetMap() map[string]interface{} {
 }
 
 // NewInput parses URL to Input Vars
-func NewInput(inpurURL string) (*Input, error) {
-	URL, err := urlutil.Parse(inpurURL)
+func NewInput(inputURL string) (*Input, error) {
+	URL, err := urlutil.Parse(inputURL)
 	if err != nil {
 		return nil, err
 	}
