@@ -32,7 +32,18 @@ func init() {
 			}
 		}
 	}
+	if err := validateDir(filepath.Join(getUserHomeDir(), ".config/alterx")); err != nil {
+		gologger.Error().Msgf("alterx config dir not found and failed to create got: %v", err)
+	}
 	if err := os.WriteFile(defaultPermutationCfg, alterx.DefaultPermutationsBin, 0600); err != nil {
 		gologger.Error().Msgf("failed to save default config to %v got: %v", defaultPermutationCfg, err)
 	}
+}
+
+// validateDir checks if dir exists if not creates it
+func validateDir(dirPath string) error {
+	if fileutil.FolderExists(dirPath) {
+		return nil
+	}
+	return fileutil.CreateFolder(dirPath)
 }
