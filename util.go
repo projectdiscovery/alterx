@@ -2,8 +2,10 @@ package alterx
 
 import (
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
+	"unsafe"
 )
 
 var varRegex = regexp.MustCompile(`\{\{([a-zA-Z0-9]+)\}\}`)
@@ -46,4 +48,14 @@ func checkMissing(template string, data map[string]interface{}) error {
 		return fmt.Errorf("values of `%v` variables not found", strings.Join(res, ","))
 	}
 	return nil
+}
+
+// unsafeToBytes converts a string to byte slice and does it with
+// zero allocations.
+//
+// Reference - https://stackoverflow.com/questions/59209493/how-to-use-unsafe-get-a-byte-slice-from-a-string-without-memory-copy
+func unsafeToBytes(data string) []byte {
+	var buf = *(*[]byte)(unsafe.Pointer(&data))
+	(*reflect.SliceHeader)(unsafe.Pointer(&buf)).Cap = len(data)
+	return buf
 }

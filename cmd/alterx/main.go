@@ -55,12 +55,17 @@ func main() {
 	}
 
 	if cliOpts.DryRun {
-		gologger.Info().Msgf("Estimated Payloads: %v", m.EstimateCount())
+		_ = m.DryRun()
+		return
+	}
+
+	if cliOpts.Estimate {
+		gologger.Info().Msgf("Estimated Payloads (including duplicates) : %v", m.EstimateCount())
 		return
 	}
 
 	if err = m.ExecuteWithWriter(output); err != nil {
 		gologger.Error().Msgf("failed to write output to file got %v", err)
 	}
-	gologger.Info().Msgf("Generated %v permutations in %v", m.PayloadCount(), m.Time())
+
 }

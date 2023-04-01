@@ -19,6 +19,7 @@ var (
 	extractNumbers   = regexp.MustCompile(`[0-9]+`)
 	extractWords     = regexp.MustCompile(`[a-zA-Z0-9]+`)
 	extractWordsOnly = regexp.MustCompile(`[a-zA-Z]{3,}`)
+	DedupeResults    = true // Dedupe all results (default: true)
 )
 
 // Mutator Options
@@ -44,6 +45,8 @@ type Mutator struct {
 	payloadCount int
 	Inputs       []*Input // all processed inputs
 	timeTaken    time.Duration
+	// internal or unexported variables
+	maxkeyLenInBytes int
 }
 
 // New creates and returns new mutator instance from options
@@ -90,6 +93,12 @@ func New(opts *Options) (*Mutator, error) {
 // Execute calculates all permutations using input wordlist and patterns
 // and writes them to a string channel
 func (m *Mutator) Execute(ctx context.Context) <-chan string {
+	var maxBytes int
+	if DedupeResults {
+		count := m.EstimateCount()
+		maxBytes = count * m.maxkeyLenInBytes
+	}
+
 	results := make(chan string, len(m.Options.Patterns))
 	go func() {
 		now := time.Now()
@@ -112,6 +121,13 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 		m.timeTaken = time.Since(now)
 		close(results)
 	}()
+
+	if DedupeResults {
+		// drain results
+		d := NewDedupe(results, maxBytes)
+		d.Drain()
+		return d.GetResults()
+	}
 	return results
 }
 
@@ -125,9 +141,11 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 	for {
 		value, ok := <-resChan
 		if !ok {
+			gologger.Info().Msgf("Generated %v permutations in %v", m.payloadCount, m.Time())
 			return nil
 		}
 		if m.Options.Limit > 0 && m.payloadCount == m.Options.Limit {
+			gologger.Info().Msgf("Generated %v permutations in %v", m.payloadCount, m.Time())
 			return nil
 		}
 		_, err := Writer.Write([]byte(value + "\n"))
@@ -139,16 +157,45 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 }
 
 // EstimateCount estimates number of payloads that will be created
-// and saves to be used later on with `PayloadCount()` method
+// without actually executing/creating permutations
 func (m *Mutator) EstimateCount() int {
-	m.payloadCount = 0
-	ch := m.Execute(context.Background())
-	for {
-		_, ok := <-ch
-		if !ok {
-			break
+	counter := 0
+	for _, v := range m.Inputs {
+		varMap := getSampleMap(v.GetMap(), m.Options.Payloads)
+		for _, pattern := range m.Options.Patterns {
+			if err := checkMissing(pattern, varMap); err == nil {
+				// if say patterns is {{sub}}.{{sub1}}-{{word}}.{{root}}
+				// and input domain is api.scanme.sh its clear that {{sub1}} here will be empty/missing
+				// in such cases `alterx` silently skips that pattern for that specific input
+				// this way user can have a long list of patterns but they are only used if all required data is given (much like self-contained templates)
+				statement := Replace(pattern, v.GetMap())
+				bin := unsafeToBytes(statement)
+				if m.maxkeyLenInBytes < len(bin) {
+					m.maxkeyLenInBytes = len(bin)
+				}
+				varsUsed := getAllVars(statement)
+				if len(varsUsed) == 0 {
+					counter += 1
+				} else {
+					tmpCounter := 1
+					for _, word := range varsUsed {
+						tmpCounter *= len(m.Options.Payloads[word])
+					}
+					counter += tmpCounter
+				}
+			}
 		}
-		m.payloadCount++
+	}
+	return counter
+}
+
+// DryRun executes payloads without storing and returns number of payloads created
+// this value is also stored in variable and can be accessed via getter `PayloadCount`
+func (m *Mutator) DryRun() int {
+	m.payloadCount = 0
+	err := m.ExecuteWithWriter(io.Discard)
+	if err != nil {
+		gologger.Error().Msgf("alterx: got %v", err)
 	}
 	return m.payloadCount
 }
@@ -201,7 +248,7 @@ func (m *Mutator) prepareInputs() error {
 	}
 	m.Inputs = allInputs
 	if len(errors) > 0 {
-		return errorutil.NewWithTag("alterx", "%v", strings.Join(errors, " : "))
+		gologger.Warning().Msgf("errors found when preparing inputs got: %v : skipping errored inputs", strings.Join(errors, " : "))
 	}
 	return nil
 }
@@ -217,6 +264,7 @@ func (m *Mutator) validatePatterns() error {
 	return nil
 }
 
+// enrichPayloads extract possible words and adds them to default wordlist
 func (m *Mutator) enrichPayloads() {
 	var temp bytes.Buffer
 	for _, v := range m.Inputs {
@@ -246,11 +294,12 @@ func (m *Mutator) enrichPayloads() {
 // PayloadCount returns total estimated payloads count
 func (m *Mutator) PayloadCount() int {
 	if m.payloadCount == 0 {
-		m.EstimateCount()
+		return m.EstimateCount()
 	}
 	return m.payloadCount
 }
 
+// Time returns time taken to create permutations in seconds
 func (m *Mutator) Time() string {
 	return fmt.Sprintf("%.4fs", m.timeTaken.Seconds())
 }

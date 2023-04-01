@@ -8,6 +8,7 @@ require (
 	github.com/projectdiscovery/gologger v1.1.8
 	github.com/projectdiscovery/utils v0.0.17
 	github.com/stretchr/testify v1.8.2
+	github.com/syndtr/goleveldb v1.0.0
 	golang.org/x/net v0.8.0
 	gopkg.in/yaml.v3 v3.0.1
 )
