@@ -20,7 +20,6 @@ type Options struct {
 	Output             string
 	Config             string
 	PermutationConfig  string
-	DryRun             bool
 	Estimate           bool
 	DisableUpdateCheck bool
 	Verbose            bool
@@ -43,7 +42,6 @@ func ParseFlags() *Options {
 	)
 
 	flagSet.CreateGroup("output", "Output",
-		flagSet.BoolVarP(&opts.DryRun, "count", "c", false, "display count of generated payloads permutation"),
 		flagSet.BoolVar(&opts.Estimate, "estimate", false, "estimate count without generating payloads"),
 		flagSet.StringVarP(&opts.Output, "output", "o", "", "output file to write altered subdomain list"),
 		flagSet.BoolVarP(&opts.Verbose, "verbose", "v", false, "display verbose output"),

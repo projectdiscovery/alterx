@@ -74,7 +74,6 @@ pattern in simple terms can be considered as `template` that describes what type
 ## Usage
 
 ```console
-./alterx -h
 Fast and customizable subdomain wordlist generator using DSL.
 
 Usage:
@@ -87,7 +86,6 @@ INPUT:
    -pp, -payload value    payloads in pattern to replace/use in key=value format (-pp 'word=words.txt')
 
 OUTPUT:
-   -c, -count          display count of generated payloads permutation
    -estimate           estimate count without generating payloads
    -o, -output string  output file to write altered subdomain list
    -v, -verbose        display verbose output

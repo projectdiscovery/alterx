@@ -54,11 +54,6 @@ func main() {
 		gologger.Fatal().Msgf("failed to parse alterx config got %v", err)
 	}
 
-	if cliOpts.DryRun {
-		_ = m.DryRun()
-		return
-	}
-
 	if cliOpts.Estimate {
 		gologger.Info().Msgf("Estimated Payloads (including duplicates) : %v", m.EstimateCount())
 		return
