@@ -36,13 +36,13 @@ func ParseFlags() *Options {
 	flagSet.SetDescription(`Fast and customizable subdomain wordlist generator using DSL.`)
 
 	flagSet.CreateGroup("input", "Input",
-		flagSet.StringSliceVarP(&opts.Domains, "list", "l", nil, "subdomains to use when creating permutations (comma-separated, file)", goflags.FileCommaSeparatedStringSliceOptions),
-		flagSet.StringSliceVarP(&opts.Patterns, "pattern", "p", nil, "input patterns for alterx (comma-seperated, file)", goflags.FileCommaSeparatedStringSliceOptions),
-		flagSet.RuntimeMapVarP(&opts.wordlists, "payload", "pp", nil, "payloads in pattern to replace/use in key=value format (-pp 'word=words.txt')"),
+		flagSet.StringSliceVarP(&opts.Domains, "list", "l", nil, "subdomains to use when creating permutations (stdin, comma-separated, file)", goflags.FileCommaSeparatedStringSliceOptions),
+		flagSet.StringSliceVarP(&opts.Patterns, "pattern", "p", nil, "custom permutation patterns input to generate (comma-seperated, file)", goflags.FileCommaSeparatedStringSliceOptions),
+		flagSet.RuntimeMapVarP(&opts.wordlists, "payload", "pp", nil, "custom payload pattern input to replace/use in key=value format (-pp 'word=words.txt')"),
 	)
 
 	flagSet.CreateGroup("output", "Output",
-		flagSet.BoolVar(&opts.Estimate, "estimate", false, "estimate count without generating payloads"),
+		flagSet.BoolVarP(&opts.Estimate, "estimate", "es", false, "estimate permutation count without generating payloads"),
 		flagSet.StringVarP(&opts.Output, "output", "o", "", "output file to write altered subdomain list"),
 		flagSet.BoolVarP(&opts.Verbose, "verbose", "v", false, "display verbose output"),
 		flagSet.BoolVar(&opts.Silent, "silent", false, "display results only"),
@@ -51,7 +51,7 @@ func ParseFlags() *Options {
 
 	flagSet.CreateGroup("config", "Config",
 		flagSet.StringVar(&opts.Config, "config", "", `alterx cli config file (default '$HOME/.config/alterx/config.yaml')`),
-		flagSet.BoolVarP(&opts.Enrich, "enrich", "e", false, "enrich wordlist by extracting words from input"),
+		flagSet.BoolVarP(&opts.Enrich, "enrich", "en", false, "enrich wordlist by extracting words from input"),
 		flagSet.StringVar(&opts.PermutationConfig, "ac", "", fmt.Sprintf(`alterx permutation config file (default '$HOME/.config/alterx/permutation_%v.yaml')`, version)),
 		flagSet.IntVar(&opts.Limit, "limit", 0, "limit the number of results to return (default 0)"),
 	)

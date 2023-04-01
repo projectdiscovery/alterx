@@ -81,12 +81,12 @@ Usage:
 
 Flags:
 INPUT:
-   -l, -list string[]     subdomains to use when creating permutations (comma-separated, file)
-   -p, -pattern string[]  input patterns for alterx (comma-seperated, file)
-   -pp, -payload value    payloads in pattern to replace/use in key=value format (-pp 'word=words.txt')
+   -l, -list string[]     subdomains to use when creating permutations (stdin, comma-separated, file)
+   -p, -pattern string[]  custom permutation patterns input to generate (comma-seperated, file)
+   -pp, -payload value    custom payload pattern input to replace/use in key=value format (-pp 'word=words.txt')
 
 OUTPUT:
-   -estimate           estimate count without generating payloads
+   -es, -estimate      estimate permutation count without generating payloads
    -o, -output string  output file to write altered subdomain list
    -v, -verbose        display verbose output
    -silent             display results only
@@ -94,7 +94,7 @@ OUTPUT:
 
 CONFIG:
    -config string  alterx cli config file (default '$HOME/.config/alterx/config.yaml')
-   -e, -enrich     enrich wordlist by extracting words from input
+   -en, -enrich    enrich wordlist by extracting words from input
    -ac string      alterx permutation config file (default '$HOME/.config/alterx/permutation_v0.0.1.yaml')
    -limit int      limit the number of results to return (default 0)
 
