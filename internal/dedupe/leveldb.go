@@ -30,7 +30,7 @@ func NewLevelDBBackend() *LevelDBBackend {
 		// If the metadata is corrupted, try to recover
 		l.storage, err = leveldb.RecoverFile(dbPath, nil)
 		if err != nil {
-			gologger.Fatal().Msgf("goleveldb: corrupted db found, recovery failed got %v")
+			gologger.Fatal().Msgf("goleveldb: corrupted db found, recovery failed got %v", err)
 		}
 	}
 	return l
