@@ -1,0 +1,23 @@
+
+patterns:
+    - '{{sub}}-{{word}}.{{suffix}}'
+    - '{{word}}-{{sub}}.{{suffix}}'
+    - '{{word}}.{{sub}}.{{suffix}}'
+    - '{{sub}}.{{word}}.{{suffix}}'
+    ## If required data is not available pattern is silently discarded
+    ## for that specific template
+    - '{{sub}}{{year}}.{{suffix}}'
+    - '{{sub}}-{{word}}{{year}}.{{suffix}}'
+payloads:
+    word:
+        - dev
+        - lib
+        - prod
+        - stage
+        - wp
+    year:
+        - "2021"
+        - "2022"
+        - "2023"
+        - "22"
+        - "23"
