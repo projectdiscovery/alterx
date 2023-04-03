@@ -1,6 +1,7 @@
 package alterx
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -45,6 +46,18 @@ func NewInput(inputURL string) (*Input, error) {
 	URL, err := urlutil.Parse(inputURL)
 	if err != nil {
 		return nil, err
+	}
+	// check if hostname contains *
+	if strings.Contains(URL.Hostname(), "*") {
+		if strings.HasPrefix(URL.Hostname(), "*.") {
+			tmp := strings.TrimPrefix(URL.Hostname(), "*.")
+			URL.Host = strings.Replace(URL.Host, URL.Hostname(), tmp, 1)
+		}
+		// if * is present in middle ex: prod.*.hackerone.com
+		// skip it
+		if strings.Contains(URL.Hostname(), "*") {
+			return nil, fmt.Errorf("input %v is not a valid url , skipping", inputURL)
+		}
 	}
 	ivar := &Input{}
 	suffix, _ := publicsuffix.PublicSuffix(URL.Hostname())
