@@ -37,6 +37,8 @@ type Options struct {
 	// Enrich when true alterx extra possible words from input
 	// and adds them to default payloads word,number
 	Enrich bool
+	// MaxSize limits output data size
+	MaxSize int
 }
 
 // Mutator
@@ -138,6 +140,7 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 	}
 	resChan := m.Execute(context.TODO())
 	m.payloadCount = 0
+	maxFileSize := m.Options.MaxSize
 	for {
 		value, ok := <-resChan
 		if !ok {
@@ -148,7 +151,18 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 			gologger.Info().Msgf("Generated %v permutations in %v", m.payloadCount, m.Time())
 			return nil
 		}
-		_, err := Writer.Write([]byte(value + "\n"))
+		outputData := []byte(value + "\n")
+		if len(outputData) > maxFileSize {
+			gologger.Info().Msgf("MaxSize limit reached, truncating output")
+			outputData = outputData[:maxFileSize]
+			maxFileSize = 0
+		}
+
+		n, err := Writer.Write(outputData)
+		maxFileSize -= n
+		if maxFileSize <= 0 {
+			return nil
+		}
 		m.payloadCount++
 		if err != nil {
 			return err

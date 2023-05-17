@@ -3,6 +3,7 @@ package runner
 import (
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strings"
 
@@ -26,6 +27,7 @@ type Options struct {
 	Silent             bool
 	Enrich             bool
 	Limit              int
+	MaxSize            int
 	// internal/unexported fields
 	wordlists goflags.RuntimeMap
 }
@@ -44,6 +46,7 @@ func ParseFlags() *Options {
 	flagSet.CreateGroup("output", "Output",
 		flagSet.BoolVarP(&opts.Estimate, "estimate", "es", false, "estimate permutation count without generating payloads"),
 		flagSet.StringVarP(&opts.Output, "output", "o", "", "output file to write altered subdomain list"),
+		flagSet.IntVar(&opts.MaxSize, "max-size", math.MaxInt, "Max export data size (altered subdomain list will be truncated)"),
 		flagSet.BoolVarP(&opts.Verbose, "verbose", "v", false, "display verbose output"),
 		flagSet.BoolVar(&opts.Silent, "silent", false, "display results only"),
 		flagSet.CallbackVar(printVersion, "version", "display alterx version"),
@@ -69,6 +72,10 @@ func ParseFlags() *Options {
 		if err := flagSet.MergeConfigFile(opts.Config); err != nil {
 			gologger.Error().Msgf("failed to read config file got %v", err)
 		}
+	}
+
+	if opts.MaxSize < 0 {
+		gologger.Fatal().Msgf("max-size cannot be negative")
 	}
 
 	if opts.Silent {
