@@ -1,6 +1,10 @@
 package alterx
 
-import "github.com/projectdiscovery/alterx/internal/dedupe"
+import (
+	"github.com/projectdiscovery/alterx/internal/dedupe"
+	"github.com/syndtr/goleveldb/leveldb/filter"
+	"github.com/syndtr/goleveldb/leveldb/opt"
+)
 
 // MaxInMemoryDedupeSize (default : 100 MB)
 var MaxInMemoryDedupeSize = 100 * 1024 * 1024
@@ -47,15 +51,18 @@ func (d *Dedupe) GetResults() <-chan string {
 
 // NewDedupe returns a dedupe instance which removes all duplicates
 // Note: If byteLen is not correct/specified alterx may consume lot of memory
-func NewDedupe(ch <-chan string, byteLen int) *Dedupe {
+func NewDedupe(ch <-chan string, byteLen, maxkeyLenInBytes int) *Dedupe {
 	d := &Dedupe{
 		receive: ch,
 	}
 	if byteLen <= MaxInMemoryDedupeSize {
 		d.backend = dedupe.NewMapBackend()
 	} else {
-		// gologger print a info message here
-		d.backend = dedupe.NewLevelDBBackend()
+		leveldbOpts := &opt.Options{
+			// BloomFilter reduces disk reads and improves key lookup performance
+			Filter: filter.NewBloomFilter(maxkeyLenInBytes * 8),
+		}
+		d.backend = dedupe.NewLevelDBBackend(leveldbOpts)
 	}
 	return d
 }

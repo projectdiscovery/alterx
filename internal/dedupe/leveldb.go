@@ -3,11 +3,13 @@ package dedupe
 import (
 	"os"
 	"reflect"
+	"runtime/debug"
 	"unsafe"
 
 	"github.com/projectdiscovery/gologger"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/errors"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 type LevelDBBackend struct {
@@ -15,20 +17,20 @@ type LevelDBBackend struct {
 	tempdir string
 }
 
-func NewLevelDBBackend() *LevelDBBackend {
+func NewLevelDBBackend(leveldbOpts *opt.Options) *LevelDBBackend {
 	l := &LevelDBBackend{}
-	dbPath, err := os.MkdirTemp("", "nuclei-report-*")
+	dbPath, err := os.MkdirTemp("", "alterx-dedupe-*")
 	if err != nil {
 		gologger.Fatal().Msgf("failed to create temp dir for alterx dedupe got: %v", err)
 	}
 	l.tempdir = dbPath
-	l.storage, err = leveldb.OpenFile(dbPath, nil)
+	l.storage, err = leveldb.OpenFile(dbPath, leveldbOpts)
 	if err != nil {
 		if !errors.IsCorrupted(err) {
 			gologger.Fatal().Msgf("goleveldb: failed to open db got %v", err)
 		}
 		// If the metadata is corrupted, try to recover
-		l.storage, err = leveldb.RecoverFile(dbPath, nil)
+		l.storage, err = leveldb.RecoverFile(dbPath, leveldbOpts)
 		if err != nil {
 			gologger.Fatal().Msgf("goleveldb: corrupted db found, recovery failed got %v", err)
 		}
@@ -53,6 +55,7 @@ func (l *LevelDBBackend) Cleanup() {
 	if err := os.RemoveAll(l.tempdir); err != nil {
 		gologger.Error().Msgf("leveldb: cleanup got %v", err)
 	}
+	debug.FreeOSMemory()
 }
 
 // unsafeToBytes converts a string to byte slice and does it with
