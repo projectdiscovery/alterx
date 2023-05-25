@@ -39,7 +39,7 @@ func ClusterBomb(payloads *IndexMap, callback func(varMap map[string]interface{}
 	// if Vector is empty or at 1st index fix iterate over xth position
 	index := len(Vector)
 	for _, v := range payloads.GetNth(index) {
-		tmp := []string{}
+		var tmp []string
 		if len(Vector) > 0 {
 			tmp = append(tmp, Vector...)
 		}
