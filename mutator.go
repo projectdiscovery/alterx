@@ -95,22 +95,14 @@ func New(opts *Options) (*Mutator, error) {
 // Execute calculates all permutations using input wordlist and patterns
 // and writes them to a string channel
 func (m *Mutator) Execute(ctx context.Context) <-chan string {
-	results := make(chan string, len(m.Options.Patterns))
 	var maxBytes int
-	var d *Dedupe
 	if DedupeResults {
 		count := m.EstimateCount()
 		maxBytes = count * m.maxkeyLenInBytes
-		d = NewDedupe(results, maxBytes, m.maxkeyLenInBytes)
 	}
 
+	results := make(chan string, len(m.Options.Patterns))
 	go func() {
-		defer func() {
-			close(results)
-			if d != nil && d.backend != nil {
-				d.backend.Cleanup()
-			}
-		}()
 		now := time.Now()
 		for _, v := range m.Inputs {
 			varMap := getSampleMap(v.GetMap(), m.Options.Payloads)
@@ -129,10 +121,12 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 			}
 		}
 		m.timeTaken = time.Since(now)
+		close(results)
 	}()
 
 	if DedupeResults {
 		// drain results
+		d := NewDedupe(results, maxBytes)
 		d.Drain()
 		return d.GetResults()
 	}
@@ -154,28 +148,26 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 			return nil
 		}
 		if m.Options.Limit > 0 && m.payloadCount == m.Options.Limit {
-			gologger.Info().Msgf("Generated %v permutations in %v", m.payloadCount, m.Time())
-			return nil
+			// we can't early exit, due to abstraction we have to conclude the elaboration to drain all dedupers
+			continue
+		}
+		if maxFileSize <= 0 {
+			// drain all dedupers when max-file size reached
+			continue
 		}
 		outputData := []byte(value + "\n")
 		if len(outputData) > maxFileSize {
 			// truncate output data if it exceeds maxFileSize
 			outputData = outputData[:maxFileSize]
-			maxFileSize = 0
 		}
 
 		n, err := Writer.Write(outputData)
-		m.payloadCount++
 		if err != nil {
 			return err
 		}
 		// update maxFileSize limit after each write
 		maxFileSize -= n
-		if maxFileSize <= 0 {
-			gologger.Info().Msgf("MaxSize limit reached, truncating output")
-			gologger.Info().Msgf("Generated %v permutations in %v", m.payloadCount, m.Time())
-			return nil
-		}
+		m.payloadCount++
 	}
 }
 
@@ -258,9 +250,9 @@ func (m *Mutator) clusterBomb(template string, results chan string) {
 
 // prepares input and patterns and calculates estimations
 func (m *Mutator) prepareInputs() error {
-	errors := []string{}
+	var errors []string
 	// prepare input
-	allInputs := []*Input{}
+	var allInputs []*Input
 	for _, v := range m.Options.Domains {
 		i, err := NewInput(v)
 		if err != nil {
