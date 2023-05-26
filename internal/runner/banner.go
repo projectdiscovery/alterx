@@ -5,12 +5,12 @@ import (
 	updateutils "github.com/projectdiscovery/utils/update"
 )
 
-var banner = (`
+var banner = `
    ___   ____          _  __
   / _ | / / /____ ____| |/_/
  / __ |/ / __/ -_) __/>  <  
 /_/ |_/_/\__/\__/_/ /_/|_|  				 
-`)
+`
 
 var version = "v0.0.1"
 

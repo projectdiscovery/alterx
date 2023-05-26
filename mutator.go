@@ -145,8 +145,8 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 			return nil
 		}
 		if m.Options.Limit > 0 && m.payloadCount == m.Options.Limit {
-			gologger.Info().Msgf("Generated %v permutations in %v", m.payloadCount, m.Time())
-			return nil
+			// we can't early exit, due to abstraction we have to conclude the elaboration to drain all dedupers
+			continue
 		}
 		_, err := Writer.Write([]byte(value + "\n"))
 		m.payloadCount++
@@ -235,9 +235,9 @@ func (m *Mutator) clusterBomb(template string, results chan string) {
 
 // prepares input and patterns and calculates estimations
 func (m *Mutator) prepareInputs() error {
-	errors := []string{}
+	var errors []string
 	// prepare input
-	allInputs := []*Input{}
+	var allInputs []*Input
 	for _, v := range m.Options.Domains {
 		i, err := NewInput(v)
 		if err != nil {

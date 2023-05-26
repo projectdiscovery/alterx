@@ -6,6 +6,8 @@
 *.dylib
 cmd/alterx/alterx
 dist
+.idea
+.vscode
 
 # Test binary, built with `go test -c`
 *.test

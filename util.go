@@ -17,7 +17,7 @@ func getVarCount(data string) int {
 
 // returns names of all variables
 func getAllVars(data string) []string {
-	values := []string{}
+	var values []string
 	for _, v := range varRegex.FindAllStringSubmatch(data, -1) {
 		if len(v) >= 2 {
 			values = append(values, v[1])
