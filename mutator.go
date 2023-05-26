@@ -157,8 +157,8 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 		}
 		outputData := []byte(value + "\n")
 		if len(outputData) > maxFileSize {
-			// truncate output data if it exceeds maxFileSize
-			outputData = outputData[:maxFileSize]
+			maxFileSize = 0
+			continue
 		}
 
 		n, err := Writer.Write(outputData)

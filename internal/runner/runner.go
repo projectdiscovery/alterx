@@ -46,7 +46,7 @@ func ParseFlags() *Options {
 	flagSet.CreateGroup("output", "Output",
 		flagSet.BoolVarP(&opts.Estimate, "estimate", "es", false, "estimate permutation count without generating payloads"),
 		flagSet.StringVarP(&opts.Output, "output", "o", "", "output file to write altered subdomain list"),
-		flagSet.IntVar(&opts.MaxSize, "max-size", math.MaxInt, "Max export data size (altered subdomain list will be truncated)"),
+		flagSet.IntVarP(&opts.MaxSize, "max-size", "ms", math.MaxInt, "Max export data size in bytes"),
 		flagSet.BoolVarP(&opts.Verbose, "verbose", "v", false, "display verbose output"),
 		flagSet.BoolVar(&opts.Silent, "silent", false, "display results only"),
 		flagSet.CallbackVar(printVersion, "version", "display alterx version"),
