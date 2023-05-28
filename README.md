@@ -63,7 +63,8 @@ INPUT:
 OUTPUT:
    -es, -estimate      estimate permutation count without generating payloads
    -o, -output string  output file to write altered subdomain list
-   -ms, -max-size int  Max export data size in bytes (default 9223372036854775807)   -v, -verbose        display verbose output
+   -ms, -max-size int  Max export data size (kb, mb, gb, tb) (default mb)
+   -v, -verbose        display verbose output
    -silent             display results only
    -version            display alterx version
 
