@@ -5,13 +5,11 @@ import (
 	"io"
 	"math"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/projectdiscovery/goflags"
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/gologger/levels"
-	errorutil "github.com/projectdiscovery/utils/errors"
 	fileutil "github.com/projectdiscovery/utils/file"
 	updateutils "github.com/projectdiscovery/utils/update"
 )
@@ -35,7 +33,7 @@ type Options struct {
 }
 
 func ParseFlags() *Options {
-	var maxFileSize string
+	var maxFileSize goflags.Size
 	opts := &Options{}
 	flagSet := goflags.NewFlagSet()
 	flagSet.SetDescription(`Fast and customizable subdomain wordlist generator using DSL.`)
@@ -49,7 +47,7 @@ func ParseFlags() *Options {
 	flagSet.CreateGroup("output", "Output",
 		flagSet.BoolVarP(&opts.Estimate, "estimate", "es", false, "estimate permutation count without generating payloads"),
 		flagSet.StringVarP(&opts.Output, "output", "o", "", "output file to write altered subdomain list"),
-		flagSet.StringVarP(&maxFileSize, "max-size", "ms", "", "Max export data size (kb, mb, gb, tb) (default mb)"),
+		flagSet.SizeVarP(&maxFileSize, "max-size", "ms", "", "Max export data size (kb, mb, gb, tb) (default mb)"),
 		flagSet.BoolVarP(&opts.Verbose, "verbose", "v", false, "display verbose output"),
 		flagSet.BoolVar(&opts.Silent, "silent", false, "display results only"),
 		flagSet.CallbackVar(printVersion, "version", "display alterx version"),
@@ -85,7 +83,7 @@ func ParseFlags() *Options {
 	showBanner()
 
 	if !opts.DisableUpdateCheck {
-		latestVersion, err := updateutils.GetVersionCheckCallback("alterx")()
+		latestVersion, err := updateutils.GetToolVersionCallback("alterx", version)()
 		if err != nil {
 			if opts.Verbose {
 				gologger.Error().Msgf("alterx version check failed: %v", err.Error())
@@ -96,12 +94,8 @@ func ParseFlags() *Options {
 	}
 
 	opts.MaxSize = math.MaxInt
-	if len(maxFileSize) > 0 {
-		maxSize, err := convertFileSizeToBytes(maxFileSize)
-		if err != nil {
-			gologger.Fatal().Msgf("Could not parse max-size: %s\n", err)
-		}
-		opts.MaxSize = maxSize
+	if maxFileSize > 0 {
+		opts.MaxSize = int(maxFileSize)
 	}
 
 	opts.Payloads = map[string][]string{}
@@ -143,33 +137,4 @@ func ParseFlags() *Options {
 func printVersion() {
 	gologger.Info().Msgf("Current version: %s", version)
 	os.Exit(0)
-}
-
-func convertFileSizeToBytes(maxFileSize string) (int, error) {
-	maxFileSize = strings.ToLower(maxFileSize)
-	// default to mb
-	if size, err := strconv.Atoi(maxFileSize); err == nil {
-		return size * 1024 * 1024, nil
-	}
-	if len(maxFileSize) < 3 {
-		return 0, errorutil.New("invalid max-size value")
-	}
-	sizeUnit := maxFileSize[len(maxFileSize)-2:]
-	size, err := strconv.Atoi(maxFileSize[:len(maxFileSize)-2])
-	if err != nil {
-		return 0, err
-	}
-	if size < 0 {
-		return 0, errorutil.New("max-size cannot be negative")
-	}
-	if strings.EqualFold(sizeUnit, "kb") {
-		return size * 1024, nil
-	} else if strings.EqualFold(sizeUnit, "mb") {
-		return size * 1024 * 1024, nil
-	} else if strings.EqualFold(sizeUnit, "gb") {
-		return size * 1024 * 1024 * 1024, nil
-	} else if strings.EqualFold(sizeUnit, "tb") {
-		return size * 1024 * 1024 * 1024 * 1024, nil
-	}
-	return 0, errorutil.New("Unsupported max-size unit")
 }
