@@ -2,10 +2,12 @@ package alterx
 
 import (
 	"os"
+	"strings"
 
 	_ "embed"
 
 	"github.com/projectdiscovery/gologger"
+	fileutil "github.com/projectdiscovery/utils/file"
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,6 +32,21 @@ func NewConfig(filePath string) (*Config, error) {
 	if err = yaml.Unmarshal(bin, &cfg); err != nil {
 		return nil, err
 	}
+
+	var words []string
+	for _, p := range cfg.Payloads["word"] {
+		if !fileutil.FileExists(p) {
+			words = append(words, p)
+		} else {
+			wordBytes, err := os.ReadFile(p)
+			if err != nil {
+				gologger.Error().Msgf("failed to read wordlist from %v got %v", p, err)
+				continue
+			}
+			words = append(words, strings.Fields(string(wordBytes))...)
+		}
+	}
+	cfg.Payloads["word"] = words
 	return &cfg, nil
 }
 
