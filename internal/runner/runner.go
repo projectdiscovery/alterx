@@ -3,6 +3,7 @@ package runner
 import (
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strings"
 
@@ -26,11 +27,13 @@ type Options struct {
 	Silent             bool
 	Enrich             bool
 	Limit              int
+	MaxSize            int
 	// internal/unexported fields
 	wordlists goflags.RuntimeMap
 }
 
 func ParseFlags() *Options {
+	var maxFileSize goflags.Size
 	opts := &Options{}
 	flagSet := goflags.NewFlagSet()
 	flagSet.SetDescription(`Fast and customizable subdomain wordlist generator using DSL.`)
@@ -44,6 +47,7 @@ func ParseFlags() *Options {
 	flagSet.CreateGroup("output", "Output",
 		flagSet.BoolVarP(&opts.Estimate, "estimate", "es", false, "estimate permutation count without generating payloads"),
 		flagSet.StringVarP(&opts.Output, "output", "o", "", "output file to write altered subdomain list"),
+		flagSet.SizeVarP(&maxFileSize, "max-size", "ms", "", "Max export data size (kb, mb, gb, tb) (default mb)"),
 		flagSet.BoolVarP(&opts.Verbose, "verbose", "v", false, "display verbose output"),
 		flagSet.BoolVar(&opts.Silent, "silent", false, "display results only"),
 		flagSet.CallbackVar(printVersion, "version", "display alterx version"),
@@ -79,7 +83,7 @@ func ParseFlags() *Options {
 	showBanner()
 
 	if !opts.DisableUpdateCheck {
-		latestVersion, err := updateutils.GetVersionCheckCallback("alterx")()
+		latestVersion, err := updateutils.GetToolVersionCallback("alterx", version)()
 		if err != nil {
 			if opts.Verbose {
 				gologger.Error().Msgf("alterx version check failed: %v", err.Error())
@@ -87,6 +91,11 @@ func ParseFlags() *Options {
 		} else {
 			gologger.Info().Msgf("Current alterx version %v %v", version, updateutils.GetVersionDescription(version, latestVersion))
 		}
+	}
+
+	opts.MaxSize = math.MaxInt
+	if maxFileSize > 0 {
+		opts.MaxSize = int(maxFileSize)
 	}
 
 	opts.Payloads = map[string][]string{}

@@ -37,6 +37,8 @@ type Options struct {
 	// Enrich when true alterx extra possible words from input
 	// and adds them to default payloads word,number
 	Enrich bool
+	// MaxSize limits output data size
+	MaxSize int
 }
 
 // Mutator
@@ -138,6 +140,7 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 	}
 	resChan := m.Execute(context.TODO())
 	m.payloadCount = 0
+	maxFileSize := m.Options.MaxSize
 	for {
 		value, ok := <-resChan
 		if !ok {
@@ -148,11 +151,23 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 			// we can't early exit, due to abstraction we have to conclude the elaboration to drain all dedupers
 			continue
 		}
-		_, err := Writer.Write([]byte(value + "\n"))
-		m.payloadCount++
+		if maxFileSize <= 0 {
+			// drain all dedupers when max-file size reached
+			continue
+		}
+		outputData := []byte(value + "\n")
+		if len(outputData) > maxFileSize {
+			maxFileSize = 0
+			continue
+		}
+
+		n, err := Writer.Write(outputData)
 		if err != nil {
 			return err
 		}
+		// update maxFileSize limit after each write
+		maxFileSize -= n
+		m.payloadCount++
 	}
 }
 
