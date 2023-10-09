@@ -155,6 +155,11 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 			// drain all dedupers when max-file size reached
 			continue
 		}
+
+		if strings.HasPrefix(value, "-") {
+			continue
+		}
+
 		outputData := []byte(value + "\n")
 		if len(outputData) > maxFileSize {
 			maxFileSize = 0
