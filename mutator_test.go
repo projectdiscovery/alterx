@@ -2,6 +2,7 @@ package alterx
 
 import (
 	"bytes"
+	"math"
 	"strings"
 	"testing"
 
@@ -39,6 +40,7 @@ func TestMutatorResults(t *testing.T) {
 	}
 	opts.Patterns = testConfig.Patterns
 	opts.Payloads = testConfig.Payloads
+	opts.MaxSize = math.MaxInt
 	m, err := New(opts)
 	require.Nil(t, err)
 	var buff bytes.Buffer

@@ -62,9 +62,10 @@ func TestExtractVar(t *testing.T) {
 	}{
 		{statement: "{{sub}}.something.{{tld}}", expected: []string{"sub", "tld"}},
 		{statement: "{{sub}}.{{sub1}}.{{sub2}}.{{root}}", expected: []string{"sub", "sub1", "sub2", "root"}},
-		{statement: "no variables", expected: []string{}},
+		{statement: "no variables", expected: nil},
 	}
 	for _, v := range testcases {
-		require.Equal(t, v.expected, getAllVars(v.statement))
+		actual := getAllVars(v.statement)
+		require.Equal(t, v.expected, actual)
 	}
 }
