@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/projectdiscovery/fasttemplate v0.0.2
-	github.com/projectdiscovery/goflags v0.1.9-0.20230530134255-2ad2577753ac
+	github.com/projectdiscovery/goflags v0.1.23
 	github.com/projectdiscovery/gologger v1.1.11
 	github.com/projectdiscovery/hmap v0.0.11
 	github.com/projectdiscovery/utils v0.0.57
