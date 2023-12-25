@@ -7,7 +7,7 @@ require (
 	github.com/projectdiscovery/goflags v0.1.32
 	github.com/projectdiscovery/gologger v1.1.12
 	github.com/projectdiscovery/hmap v0.0.31
-	github.com/projectdiscovery/utils v0.0.68
+	github.com/projectdiscovery/utils v0.0.69
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/net v0.17.0
 	gopkg.in/yaml.v3 v3.0.1
