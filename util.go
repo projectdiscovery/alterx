@@ -2,7 +2,6 @@ package alterx
 
 import (
 	"fmt"
-	"reflect"
 	"regexp"
 	"strings"
 	"unsafe"
@@ -50,12 +49,11 @@ func checkMissing(template string, data map[string]interface{}) error {
 	return nil
 }
 
+// TODO: add this to utils
 // unsafeToBytes converts a string to byte slice and does it with
 // zero allocations.
 //
 // Reference - https://stackoverflow.com/questions/59209493/how-to-use-unsafe-get-a-byte-slice-from-a-string-without-memory-copy
 func unsafeToBytes(data string) []byte {
-	var buf = *(*[]byte)(unsafe.Pointer(&data))
-	(*reflect.SliceHeader)(unsafe.Pointer(&buf)).Cap = len(data)
-	return buf
+	return unsafe.Slice(unsafe.StringData(data), len(data))
 }
