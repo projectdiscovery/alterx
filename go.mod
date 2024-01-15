@@ -6,7 +6,7 @@ require (
 	github.com/projectdiscovery/fasttemplate v0.0.2
 	github.com/projectdiscovery/goflags v0.1.35
 	github.com/projectdiscovery/gologger v1.1.12
-	github.com/projectdiscovery/hmap v0.0.33
+	github.com/projectdiscovery/hmap v0.0.34
 	github.com/projectdiscovery/utils v0.0.73
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/net v0.17.0
