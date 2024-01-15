@@ -11,6 +11,7 @@ import (
 
 	"github.com/projectdiscovery/fasttemplate"
 	"github.com/projectdiscovery/gologger"
+	"github.com/projectdiscovery/utils/dedupe"
 	errorutil "github.com/projectdiscovery/utils/errors"
 	sliceutil "github.com/projectdiscovery/utils/slice"
 )
@@ -126,7 +127,7 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 
 	if DedupeResults {
 		// drain results
-		d := NewDedupe(results, maxBytes)
+		d := dedupe.NewDedupe(results, maxBytes)
 		d.Drain()
 		return d.GetResults()
 	}
