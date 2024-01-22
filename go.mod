@@ -4,9 +4,8 @@ go 1.21
 
 require (
 	github.com/projectdiscovery/fasttemplate v0.0.2
-	github.com/projectdiscovery/goflags v0.1.35
+	github.com/projectdiscovery/goflags v0.1.36
 	github.com/projectdiscovery/gologger v1.1.12
-	github.com/projectdiscovery/hmap v0.0.34
 	github.com/projectdiscovery/utils v0.0.73
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/net v0.17.0
@@ -59,7 +58,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/projectdiscovery/blackrock v0.0.1 // indirect
-	github.com/projectdiscovery/hmap v0.0.33 // indirect
+	github.com/projectdiscovery/hmap v0.0.34 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
