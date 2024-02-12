@@ -140,8 +140,8 @@ github.com/projectdiscovery/goflags v0.1.38 h1:+StqgcGxBy0Ogyq+QjqFCwC/O2VJItgZW
 github.com/projectdiscovery/goflags v0.1.38/go.mod h1:0FHBL7g1TKLHw04zSFsWCSU2grGB7zKKFrYKJx2H6mk=
 github.com/projectdiscovery/gologger v1.1.12 h1:uX/QkQdip4PubJjjG0+uk5DtyAi1ANPJUvpmimXqv4A=
 github.com/projectdiscovery/gologger v1.1.12/go.mod h1:DI8nywPLERS5mo8QEA9E7gd5HZ3Je14SjJBH3F5/kLw=
-github.com/projectdiscovery/hmap v0.0.37 h1:RNVEhdMcUIeG/oadJAs/cXU17Kcccc5kQU3PMzJWtkw=
-github.com/projectdiscovery/hmap v0.0.37/go.mod h1:zreVGG6K2JSFX3+9PZHYFPOxJBNNJ9NQt1T8aSrc5lw=
+github.com/projectdiscovery/hmap v0.0.38 h1:H4eeVRC3Km4bN877V17RoYJe11Wa5M7U1o/FOu9p1TA=
+github.com/projectdiscovery/hmap v0.0.38/go.mod h1:kTeo8Qo+eDxZUrCBPHOy8qvFRrDNWWrJddf5i1hJHe0=
 github.com/projectdiscovery/utils v0.0.77 h1:HPLNY/WgVsLaHPBW1XA5XYMkTo9VRjhbOIZs+Lfww7s=
 github.com/projectdiscovery/utils v0.0.77/go.mod h1:XkHTUln/MJaWAgber2C0o1Mqacr2s9JMRhOVBjmII7w=
 github.com/rivo/uniseg v0.1.0/go.mod h1:J6wj4VEh+S6ZtnVlnTBMWIodfgj8LQOQFoIToxlJtxc=
