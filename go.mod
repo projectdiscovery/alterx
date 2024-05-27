@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/projectdiscovery/fasttemplate v0.0.2
-	github.com/projectdiscovery/goflags v0.1.53
+	github.com/projectdiscovery/goflags v0.1.54
 	github.com/projectdiscovery/gologger v1.1.12
 	github.com/projectdiscovery/utils v0.1.0
 	github.com/stretchr/testify v1.9.0
@@ -35,6 +35,7 @@ require (
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/go-github/v30 v30.1.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
+	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.3.1 // indirect
 	github.com/gorilla/css v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
