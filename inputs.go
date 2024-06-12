@@ -14,6 +14,7 @@ import (
 type Input struct {
 	TLD        string   // only TLD (right most part of subdomain) ex: `.uk`
 	ETLD       string   // Simply put public suffix (ex: co.uk)
+	Main       string   // Main of Subdomain (ex: scanme)
 	Root       string   // Root Domain (eTLD+1) of Subdomain
 	Sub        string   // Sub or LeftMost prefix of subdomain
 	Suffix     string   // suffix is everything except `Sub` (Note: if domain is not multilevel Suffix==Root)
@@ -25,6 +26,7 @@ func (i *Input) GetMap() map[string]interface{} {
 	m := map[string]interface{}{
 		"tld":    i.TLD,
 		"etld":   i.ETLD,
+		"main":   i.Main,
 		"root":   i.Root,
 		"sub":    i.Sub,
 		"suffix": i.Suffix,
@@ -75,6 +77,11 @@ func NewInput(inputURL string) (*Input, error) {
 		return ivar, nil
 	}
 	ivar.Root = rootDomain
+	if ivar.ETLD != "" {
+		ivar.Main = strings.TrimSuffix(rootDomain, "."+ivar.ETLD)
+	} else {
+		ivar.Main = strings.TrimSuffix(rootDomain, "."+ivar.TLD)
+	}
 	// anything before root domain is subdomain
 	subdomainPrefix := strings.TrimSuffix(URL.Hostname(), rootDomain)
 	subdomainPrefix = strings.TrimSuffix(subdomainPrefix, ".")
