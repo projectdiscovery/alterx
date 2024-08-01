@@ -114,6 +114,7 @@ Almost all popular subdomain permutation tools have hardcoded patterns and when 
 ### Advanced Variables
 
 ```yaml
+{{main}}  :  domain  (ex for api.scanme.sh => {{main}} is scanme)
 {{root}}  :  also known as eTLD+1 i.e only root domain (ex for api.scanme.sh => {{root}} is scanme.sh)
 {{subN}}  :  here N is an integer (ex {{sub1}} , {{sub2}} etc) .
 
@@ -124,6 +125,7 @@ Almost all popular subdomain permutation tools have hardcoded patterns and when 
 
 | Variable | api.scanme.sh | admin.dev.scanme.sh | cloud.scanme.co.uk |
 | -------- | ------------- | ------------------- | ------------------ |
+| `{{main}}` | `scanme`      | `scanme`            | `scanme`         |
 | `{{root}}` | `scanme.sh`   | `scanme.sh`         | `scanme.co.uk`   |
 | `{{sub1}}` | `-`           | `dev`               | `-`              |
 | `{{sub2}}` | `-`           | `-`                 | `-`              |
