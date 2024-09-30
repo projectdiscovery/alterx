@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/projectdiscovery/fasttemplate v0.0.2
 	github.com/projectdiscovery/goflags v0.1.64
-	github.com/projectdiscovery/gologger v1.1.25
+	github.com/projectdiscovery/gologger v1.1.26
 	github.com/projectdiscovery/utils v0.2.11
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.29.0
