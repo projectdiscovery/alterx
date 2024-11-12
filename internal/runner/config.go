@@ -5,10 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/goccy/go-yaml"
 	"github.com/projectdiscovery/alterx"
 	"github.com/projectdiscovery/gologger"
 	fileutil "github.com/projectdiscovery/utils/file"
-	"gopkg.in/yaml.v3"
 )
 
 func getUserHomeDir() string {
@@ -29,6 +29,9 @@ func init() {
 			if errx := yaml.Unmarshal(bin, &cfg); errx == nil {
 				alterx.DefaultConfig = cfg
 				return
+			} else {
+				gologger.Error().Msgf("alterx yaml configuration syntax error.\n %v\n.", yaml.FormatError(errx, true, true))
+				os.Exit(1)
 			}
 		}
 	}

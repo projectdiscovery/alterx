@@ -2,7 +2,9 @@ module github.com/projectdiscovery/alterx
 
 go 1.21
 
+
 require (
+	github.com/goccy/go-yaml v1.13.8
 	github.com/projectdiscovery/fasttemplate v0.0.2
 	github.com/projectdiscovery/goflags v0.1.64
 	github.com/projectdiscovery/gologger v1.1.31
