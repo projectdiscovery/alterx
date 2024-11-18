@@ -11,7 +11,7 @@ func TestInput(t *testing.T) {
 	expected := &Input{
 		TLD:    "uk",
 		ETLD:   "co.uk",
-		Main:   "scanme",
+		SLD:    "scanme",
 		Root:   "scanme.co.uk",
 		Suffix: "scanme.co.uk",
 		Sub:    "",
@@ -28,11 +28,11 @@ func TestInputSub(t *testing.T) {
 		url      string
 		expected *Input
 	}{
-		{url: "something.scanme.sh", expected: &Input{TLD: "sh", ETLD: "", Main: "scanme", Root: "scanme.sh", Sub: "something", Suffix: "scanme.sh"}},
-		{url: "nested.something.scanme.sh", expected: &Input{TLD: "sh", ETLD: "", Main: "scanme", Root: "scanme.sh", Sub: "nested", Suffix: "something.scanme.sh", MultiLevel: []string{"something"}}},
-		{url: "nested.multilevel.scanme.co.uk", expected: &Input{TLD: "uk", ETLD: "co.uk", Main: "scanme", Root: "scanme.co.uk", Sub: "nested", Suffix: "multilevel.scanme.co.uk", MultiLevel: []string{"multilevel"}}},
-		{url: "sub.level1.level2.scanme.sh", expected: &Input{TLD: "sh", ETLD: "", Main: "scanme", Root: "scanme.sh", Sub: "sub", Suffix: "level1.level2.scanme.sh", MultiLevel: []string{"level1", "level2"}}},
-		{url: "scanme.sh", expected: &Input{TLD: "sh", ETLD: "", Sub: "", Suffix: "scanme.sh", Main: "scanme", Root: "scanme.sh"}},
+		{url: "something.scanme.sh", expected: &Input{TLD: "sh", ETLD: "", SLD: "scanme", Root: "scanme.sh", Sub: "something", Suffix: "scanme.sh"}},
+		{url: "nested.something.scanme.sh", expected: &Input{TLD: "sh", ETLD: "", SLD: "scanme", Root: "scanme.sh", Sub: "nested", Suffix: "something.scanme.sh", MultiLevel: []string{"something"}}},
+		{url: "nested.multilevel.scanme.co.uk", expected: &Input{TLD: "uk", ETLD: "co.uk", SLD: "scanme", Root: "scanme.co.uk", Sub: "nested", Suffix: "multilevel.scanme.co.uk", MultiLevel: []string{"multilevel"}}},
+		{url: "sub.level1.level2.scanme.sh", expected: &Input{TLD: "sh", ETLD: "", SLD: "scanme", Root: "scanme.sh", Sub: "sub", Suffix: "level1.level2.scanme.sh", MultiLevel: []string{"level1", "level2"}}},
+		{url: "scanme.sh", expected: &Input{TLD: "sh", ETLD: "", Sub: "", Suffix: "scanme.sh", SLD: "scanme", Root: "scanme.sh"}},
 	}
 	for _, v := range testcases {
 		got, err := NewInput(v.url)
