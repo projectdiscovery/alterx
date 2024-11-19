@@ -81,7 +81,7 @@ UPDATE:
 
 ## Why `alterx` ??
 
-what makes `alterx` different from any other subdomain permutation tools like `goaltdns` is its `scripting` feature . alterx takes patterns as input and generates subdomain permutation wordlist based on that pattern similar to what [nuclei](https://github.com/projectdiscovery/nuclei) does with [fuzzing-templates](https://github.com/projectdiscovery/fuzzing-templates) . 
+what makes `alterx` different from any other subdomain permutation tools like `goaltdns` is its `scripting` feature . alterx takes patterns as input and generates subdomain permutation wordlist based on that pattern similar to what [nuclei](https://github.com/projectdiscovery/nuclei) does with [fuzzing-templates](https://github.com/projectdiscovery/fuzzing-templates) .
 
 What makes `Active Subdomain Enumeration` difficult is the probability of finding a domain that actually exists. If finding possible subdomains is represented on a scale it should look something like
 
@@ -96,7 +96,7 @@ Almost all popular subdomain permutation tools have hardcoded patterns and when 
 `alterx` uses variable-like syntax similar to nuclei-templates. One can write their own patterns using these variables . when domains are passed as input `alterx` evaluates input and extracts variables from it .
 
 ### Basic / Common Variables
-  
+
 ```yaml
 {{sub}}     :  subdomain prefix or left most part of a subdomain
 {{suffix}}  :  everything except {{sub}} in subdomain name is suffix
@@ -114,7 +114,7 @@ Almost all popular subdomain permutation tools have hardcoded patterns and when 
 ### Advanced Variables
 
 ```yaml
-{{sld}}  :  domain  (ex for api.scanme.sh => {{sld}} is scanme)
+{{sld}}  :   second-level domain  (ex for api.scanme.sh => {{sld}} is scanme)
 {{root}}  :  also known as eTLD+1 i.e only root domain (ex for api.scanme.sh => {{root}} is scanme.sh)
 {{subN}}  :  here N is an integer (ex {{sub1}} , {{sub2}} etc) .
 
@@ -161,12 +161,12 @@ An example of running alterx on existing list of passive subdomains of `tesla.co
 ```console
 $ chaos -d tesla.com | alterx | dnsx
 
- 
+
 
    ___   ____          _  __
   / _ | / / /____ ____| |/_/
- / __ |/ / __/ -_) __/>  <  
-/_/ |_/_/\__/\__/_/ /_/|_|              
+ / __ |/ / __/ -_) __/>  <
+/_/ |_/_/\__/\__/_/ /_/|_|
 
       projectdiscovery.io
 
@@ -190,23 +190,23 @@ $ chaos -d tesla.com | alterx -enrich
 
    ___   ____          _  __
   / _ | / / /____ ____| |/_/
- / __ |/ / __/ -_) __/>  <  
-/_/ |_/_/\__/\__/_/ /_/|_|              
+ / __ |/ / __/ -_) __/>  <
+/_/ |_/_/\__/\__/_/ /_/|_|
 
       projectdiscovery.io
 
 [INF] Generated 662010 permutations in 3.9989s
 ```
 
-You can alter the default patterns at run time using `-pattern` CLI option. 
+You can alter the default patterns at run time using `-pattern` CLI option.
 
 ```console
 $ chaos -d tesla.com | alterx -enrich -p '{{word}}-{{suffix}}'
 
    ___   ____          _  __
   / _ | / / /____ ____| |/_/
- / __ |/ / __/ -_) __/>  <  
-/_/ |_/_/\__/\__/_/ /_/|_|              
+ / __ |/ / __/ -_) __/>  <
+/_/ |_/_/\__/\__/_/ /_/|_|
 
       projectdiscovery.io
 
@@ -220,8 +220,8 @@ $ alterx -list tesla.txt -enrich -p '{{word}}-{{year}}.{{suffix}}' -pp word=keyw
 
    ___   ____          _  __
   / _ | / / /____ ____| |/_/
- / __ |/ / __/ -_) __/>  <  
-/_/ |_/_/\__/\__/_/ /_/|_|              
+ / __ |/ / __/ -_) __/>  <
+/_/ |_/_/\__/\__/_/ /_/|_|
 
       projectdiscovery.io
 

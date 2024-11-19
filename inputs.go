@@ -14,7 +14,7 @@ import (
 type Input struct {
 	TLD        string   // only TLD (right most part of subdomain) ex: `.uk`
 	ETLD       string   // Simply put public suffix (ex: co.uk)
-	SLD        string   // SLD of Subdomain (ex: scanme)
+	SLD        string   // Second-level domain (ex: scanme)
 	Root       string   // Root Domain (eTLD+1) of Subdomain
 	Sub        string   // Sub or LeftMost prefix of subdomain
 	Suffix     string   // suffix is everything except `Sub` (Note: if domain is not multilevel Suffix==Root)
@@ -26,7 +26,7 @@ func (i *Input) GetMap() map[string]interface{} {
 	m := map[string]interface{}{
 		"tld":    i.TLD,
 		"etld":   i.ETLD,
-		"sld":   i.SLD,
+		"sld":    i.SLD,
 		"root":   i.Root,
 		"sub":    i.Sub,
 		"suffix": i.Suffix,
