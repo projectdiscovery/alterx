@@ -235,11 +235,12 @@ func (m *Mutator) clusterBomb(template string, results chan string) {
 	payloadSet := map[string][]string{}
 	// instead of sending all payloads only send payloads that are used
 	// in template/statement
+	leftmostSub := strings.Split(template, ".")[0]
 	for _, v := range varsUsed {
 		payloadSet[v] = []string{}
 		for _, word := range m.Options.Payloads[v] {
-			if !strings.Contains(template, word) {
-				// skip all words that are already present in template/sub , it is highly unlikely
+			if !strings.HasPrefix(leftmostSub, word) && !strings.HasSuffix(leftmostSub, word) {
+				// skip all words that are already present in leftmost sub , it is highly unlikely
 				// we will ever find api-api.example.com
 				payloadSet[v] = append(payloadSet[v], word)
 			}
