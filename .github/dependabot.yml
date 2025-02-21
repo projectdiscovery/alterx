@@ -11,14 +11,15 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    target-branch: "main"
+    target-branch: "dev"
     commit-message:
       prefix: "chore"
       include: "scope"
     labels:
       - "Type: Maintenance"
-    allow:
-      - dependency-name: "github.com/projectdiscovery/*"
+    groups:
+      modules:
+        patterns: ["github.com/projectdiscovery/*"]
 
 #  # Maintain dependencies for docker
 #  - package-ecosystem: "docker"
