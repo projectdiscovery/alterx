@@ -38,6 +38,8 @@ type Options struct {
 	// Enrich when true alterx extra possible words from input
 	// and adds them to default payloads word,number
 	Enrich bool
+	// Mode specifies pattern generation mode: both, inferred, default
+	Mode string
 	// MaxSize limits output data size
 	MaxSize int
 }
@@ -68,7 +70,46 @@ func New(opts *Options) (*Mutator, error) {
 		if len(DefaultConfig.Patterns) == 0 {
 			return nil, fmt.Errorf("something went wrong,`DefaultPatters` and input patterns are empty")
 		}
-		opts.Patterns = DefaultConfig.Patterns
+		// Apply pattern selection based on mode
+		switch opts.Mode {
+		case "default":
+			// Use only default patterns
+			opts.Patterns = DefaultConfig.Patterns
+		case "inferred":
+			// Use only inferred patterns from input subdomain analysis
+			inducer := NewPatternInducer(opts.Domains, opts.Domains, 2)
+			inferredPatterns, err := inducer.InferPatterns()
+			if err != nil {
+				gologger.Warning().Msgf("Pattern induction failed: %v. Falling back to default patterns.", err)
+				opts.Patterns = DefaultConfig.Patterns
+			} else if len(inferredPatterns) == 0 {
+				gologger.Warning().Msg("No patterns inferred from input. Falling back to default patterns.")
+				opts.Patterns = DefaultConfig.Patterns
+			} else {
+				opts.Patterns = inferredPatterns
+			}
+		case "both", "":
+			// Use both default and inferred patterns
+			inducer := NewPatternInducer(opts.Domains, opts.Domains, 2)
+			inferredPatterns, err := inducer.InferPatterns()
+			if err != nil {
+				gologger.Warning().Msgf("Pattern induction failed: %v. Using only default patterns.", err)
+				opts.Patterns = DefaultConfig.Patterns
+			} else if len(inferredPatterns) == 0 {
+				gologger.Verbose().Msg("No patterns inferred. Using only default patterns.")
+				opts.Patterns = DefaultConfig.Patterns
+			} else {
+				// Merge inferred patterns with default patterns
+				opts.Patterns = append(inferredPatterns, DefaultConfig.Patterns...)
+				// Dedupe to remove any overlapping patterns
+				opts.Patterns = sliceutil.Dedupe(opts.Patterns)
+				gologger.Verbose().Msgf("Using %d patterns (%d inferred + %d default)",
+					len(opts.Patterns), len(inferredPatterns), len(DefaultConfig.Patterns))
+			}
+		default:
+			// Fallback to default patterns
+			opts.Patterns = DefaultConfig.Patterns
+		}
 	}
 	// purge duplicates if any
 	for k, v := range opts.Payloads {

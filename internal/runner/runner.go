@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/projectdiscovery/goflags"
@@ -26,6 +27,7 @@ type Options struct {
 	Verbose            bool
 	Silent             bool
 	Enrich             bool
+	Mode               string // Pattern mode: both, inferred, default
 	Limit              int
 	MaxSize            int
 	// internal/unexported fields
@@ -56,6 +58,7 @@ func ParseFlags() *Options {
 	flagSet.CreateGroup("config", "Config",
 		flagSet.StringVar(&opts.Config, "config", "", `alterx cli config file (default '$HOME/.config/alterx/config.yaml')`),
 		flagSet.BoolVarP(&opts.Enrich, "enrich", "en", false, "enrich wordlist by extracting words from input"),
+		flagSet.StringVarP(&opts.Mode, "mode", "m", "both", "wordlist generation mode: both, inferred, default"),
 		flagSet.StringVar(&opts.PermutationConfig, "ac", "", fmt.Sprintf(`alterx permutation config file (default '$HOME/.config/alterx/permutation_%v.yaml')`, version)),
 		flagSet.IntVar(&opts.Limit, "limit", 0, "limit the number of results to return (default 0)"),
 	)
@@ -80,6 +83,13 @@ func ParseFlags() *Options {
 	} else if opts.Verbose {
 		gologger.DefaultLogger.SetMaxLevel(levels.LevelVerbose)
 	}
+
+	// Validate mode flag
+	validModes := []string{"both", "inferred", "default"}
+	if !slices.Contains(validModes, opts.Mode) {
+		gologger.Fatal().Msgf("invalid mode '%s'. valid modes: both, inferred, default", opts.Mode)
+	}
+
 	showBanner()
 
 	if !opts.DisableUpdateCheck {
