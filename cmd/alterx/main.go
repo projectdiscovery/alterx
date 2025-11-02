@@ -45,7 +45,11 @@ func main() {
 			gologger.Fatal().Msgf("failed to open output file %v got %v", cliOpts.Output, err)
 		}
 		output = fs
-		defer fs.Close()
+		defer func() {
+			if err := fs.Close(); err != nil {
+				gologger.Warning().Msgf("failed to close output file: %v", err)
+			}
+		}()
 	} else {
 		output = os.Stdout
 	}

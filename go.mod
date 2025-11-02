@@ -3,6 +3,7 @@ module github.com/projectdiscovery/alterx
 go 1.23.0
 
 require (
+	github.com/agnivade/levenshtein v1.2.1
 	github.com/projectdiscovery/fasttemplate v0.0.2
 	github.com/projectdiscovery/goflags v0.1.72
 	github.com/projectdiscovery/gologger v1.1.45

@@ -38,6 +38,10 @@ go test -race ./...
 # Run specific test
 go test -run TestMutator
 
+# Run tests for specific package
+go test ./inducer/
+go test -v -run Example ./inducer/
+
 # Race condition test with live input
 echo "www.scanme.sh" | go run -race cmd/alterx/main.go
 ```
@@ -198,15 +202,165 @@ When adding tests, follow existing patterns in `*_test.go` files using `github.c
 - **codeql-analysis.yml**: Security scanning
 - **dep-auto-merge.yml**: Automated dependency updates
 
-## Current Branch Context
+## Current Branch: Pattern Induction Feature
 
 **Branch**: `feat-language-induction`
 
-This branch name suggests work on inferring patterns from example inputs rather than requiring explicit pattern specification. When working on this feature, consider:
-- How to analyze existing subdomain lists to identify common patterns
-- Statistical analysis of subdomain structures
-- Machine learning or heuristic approaches for pattern extraction
-- Maintaining backward compatibility with explicit pattern specification
+This branch implements **automatic pattern learning** from passive subdomain enumeration results, based on the [regulator algorithm](https://github.com/cramppet/regulator) with significant optimizations for scalability.
+
+### Pattern Induction Architecture
+
+The pattern induction system learns subdomain naming conventions from observed data rather than requiring manual pattern specification. It follows a multi-phase approach:
+
+#### Phase 1: Tokenization (✅ Implemented - `inducer/` package)
+
+**Purpose**: Parse subdomains into structured token arrays preserving hierarchy and separators.
+
+**Key Components**:
+- **`inducer/tokenizer.go`**: Tokenization engine following regulator algorithm
+  - Extracts subdomain using `publicsuffix` (removes root domain)
+  - Splits by dots → DNS hierarchy levels (level 0, 1, 2...)
+  - Splits each level by dashes → preserves dash positions
+  - Splits by numbers → preserves numeric sequences
+  - Special handling for hyphenated numbers (e.g., "-01" stays as one token)
+
+- **`inducer/types.go`**: Core data structures
+  - `Token`: Individual token with type (Word, Dash, Number) and position
+  - `Level`: All tokens at a DNS hierarchy level
+  - `TokenizedDomain`: Complete parsed subdomain with all levels
+  - **API Convention**: 0-indexed internally, 1-indexed externally (GetLevel(1) = level 0)
+
+- **`inducer/storage.go`**: Efficient indexing
+  - `TokenIndex`: O(1) lookup - level → position → token → domain IDs
+  - `LevelStats`: Per-level statistics and frequency analysis
+  - Prepares for hierarchical partitioning (bounded group size: 5000)
+
+- **`inducer/inducer.go`**: Public API
+  - `NewPatternInducer()`: Creates inducer from domain list
+  - `LoadAndTokenize()`: Processes all domains, builds indices
+  - `GetLevel(n)`: 1-indexed external API for accessing levels
+  - `Stats()`: Comprehensive statistics about tokenization results
+
+**Tokenization Examples**:
+```
+"api-dev-01.staging.example.com" →
+  Level 0: [Token{api, Word}, Token{-dev, Dash}, Token{-01, Dash}]
+  Level 1: [Token{staging, Word}]
+
+"db01.prod.internal.example.com" →
+  Level 0: [Token{db, Word}, Token{01, Number}]
+  Level 1: [Token{prod, Word}]
+  Level 2: [Token{internal, Word}]
+```
+
+**Testing**:
+- Comprehensive unit tests in `inducer/tokenizer_test.go`
+- Example-based tests in `inducer/example_test.go`
+- Run with: `go test ./inducer/`
+
+#### Phase 2-5: Not Yet Implemented
+
+The following phases are planned based on the [optimization strategy](./literature_survey/proposed_solution.md):
+
+**Phase 2**: Edit distance clustering with hierarchical partitioning
+- Build MEMO table only within bounded groups (≤5K domains)
+- Apply multi-strategy clustering (global, n-gram, token-level)
+- Achieve O(1) memory instead of regulator's O(N²)
+
+**Phase 3**: Pattern generation and regex creation
+- Convert token closures to regex patterns
+- Compress number ranges (e.g., `01|02|03` → `[0-1][0-3]`)
+- Quality filtering via ratio test
+
+**Phase 4**: Integration with AlterX DSL
+- Map learned patterns to AlterX template format
+- Merge with manual patterns from `permutations.yaml`
+- Support hybrid mode (manual + learned patterns)
+
+**Phase 5**: CLI integration
+- Add `-mode` flag: `default` (manual), `inferred` (learned), `both`
+- Store learned patterns in `permutations.yaml` → `learned_patterns` section
+- Confidence scoring and pattern ranking
+
+### Pattern Induction Design Principles
+
+Based on extensive [literature survey](./literature_survey/) and [regulator analysis](./literature_survey/regulator/):
+
+1. **Hierarchical Prefix Partitioning**: Never build full N² MEMO table
+   - Partition domains by prefix (1-gram, 2-gram, 3-gram)
+   - Process groups ≤5K domains independently
+   - Achieves **constant O(1) memory** (1-2 GB for any dataset size)
+
+2. **Streaming Architecture**: Process groups in parallel via goroutines
+   - Build MEMO → cluster → generate patterns → free MEMO
+   - Each group is independent (no shared state)
+   - Linear speedup with CPU cores
+
+3. **Quality Over Quantity**: Ratio test filters overly broad patterns
+   - Accept patterns with generation_count/observed_count < 25
+   - Prevents pattern explosion while maintaining 80%+ precision
+
+4. **Backward Compatibility**: Learned patterns use same DSL syntax
+   - `{{service}}-{{env}}-{{number}}.{{suffix}}`
+   - Can be merged with manual patterns
+   - No breaking changes to existing functionality
+
+### Pattern Induction Configuration
+
+The `permutations.yaml` file has been extended with pattern induction sections:
+
+```yaml
+## BACKWARD COMPATIBLE - EXISTING FORMAT
+patterns:
+  - "{{word}}-{{sub}}.{{suffix}}"
+  # ... existing manual patterns
+
+payloads:
+  word: [api, dev, prod]
+  # ... existing payloads
+
+## PATTERN INDUCTION EXTENSIONS
+token_dictionary:
+  # Semantic token classifications for auto-classification
+  env: [dev, prod, staging, qa]
+  region: [us-east-1, us-west-2, eu-central-1]
+  service: [api, web, cdn, db]
+
+learned_patterns:
+  # Auto-generated during pattern induction
+  - id: pattern_001
+    template: "{{service}}-{{env}}-{{number}}.{{suffix}}"
+    coverage: 450      # Domains matched
+    ratio: 1.2         # Generations/observed
+    confidence: 0.84   # Quality score (0-1)
+```
+
+See [`literature_survey/config_format.md`](./literature_survey/config_format.md) for complete specification.
+
+### Development Workflow for Pattern Induction
+
+When working on pattern induction features:
+
+1. **Read the literature survey first**: [`literature_survey/README.md`](./literature_survey/README.md)
+   - Understand why regulator fails to scale (O(N²) space)
+   - Learn the hierarchical partitioning solution
+   - Review the optimization strategy
+
+2. **Study the regulator algorithm**: [`literature_survey/regulator/algorithm.md`](./literature_survey/regulator/algorithm.md)
+   - Tokenization rules (preserve dashes, split numbers)
+   - Edit distance clustering (multi-strategy approach)
+   - Pattern generation (closure_to_regex)
+   - Quality filtering (ratio test)
+
+3. **Current implementation status**:
+   - ✅ Phase 1: Tokenization complete in `inducer/` package
+   - ⏳ Phase 2-5: Not yet implemented
+
+4. **Integration points**:
+   - `Options.Domains` in `internal/runner/runner.go` provides input domains
+   - `Options.Mode` flag controls pattern mode (default/inferred/both)
+   - `Config` in `config.go` loads `permutations.yaml`
+   - Pattern learning populates `learned_patterns` section
 
 ## Key Dependencies
 
