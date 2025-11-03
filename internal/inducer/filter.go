@@ -218,3 +218,71 @@ func dslPatternSubsumes(broader, narrower *DSLPattern) bool {
 
 	return true
 }
+
+// FilterLowQualityTokens removes patterns with low-quality token characteristics
+// Uses GRADUATED thresholds: stricter for low-coverage, more lenient for high-coverage patterns
+//
+// Rejection criteria (ADAPTIVE based on dataset size):
+// 1. Graduated ratio threshold based on coverage
+//    - High coverage (50+ domains): Accept ratio ≤ 100
+//    - Medium coverage (10-50): Accept ratio ≤ 60
+//    - Low coverage (< 10): Accept ratio ≤ 40
+// 2. Adaptive confidence threshold (dataset-size dependent)
+//    - Small datasets (<50): 0.30 minimum (prioritize quality)
+//    - Mid datasets (50-200): 0.15 minimum (balanced)
+//    - Large datasets (200+): 0.10 minimum (prioritize discovery)
+// 3. Single-char tokens: ALLOWED (many valid cases like "d" for d1, d2, d3)
+func FilterLowQualityTokens(patterns []*DSLPattern, minConfidence float64, maxRatio float64, datasetSize int) []*DSLPattern {
+	filtered := []*DSLPattern{}
+
+	for _, pattern := range patterns {
+		// GRADUATED RATIO THRESHOLD based on coverage (AGGRESSIVELY RELAXED)
+		// Philosophy: Prioritize COVERAGE over PRECISION to hit 50-70% target
+		// Trade-off: Accept significant noise to discover patterns
+		var effectiveMaxRatio float64
+		if pattern.Coverage >= 50 {
+			effectiveMaxRatio = 100.0 // High coverage → extremely lenient
+		} else if pattern.Coverage >= 10 {
+			effectiveMaxRatio = 60.0 // Medium coverage → very lenient (was 30.0)
+		} else {
+			effectiveMaxRatio = 40.0 // Low coverage → lenient (was 20.0)
+		}
+
+		// Check 1: Graduated ratio threshold
+		if pattern.Ratio > effectiveMaxRatio {
+			gologger.Debug().Msgf("Rejected pattern (ratio %.2f > %.2f, coverage=%d): %s",
+				pattern.Ratio, effectiveMaxRatio, pattern.Coverage, pattern.Template)
+			continue
+		}
+
+		// Check 2: ADAPTIVE confidence threshold based on dataset size
+		// Small datasets: prioritize quality (30% minimum)
+		// Mid datasets: balanced approach (15% minimum)
+		// Large datasets: prioritize discovery (10% minimum)
+		var adaptiveMinConfidence float64
+		if datasetSize < 50 {
+			adaptiveMinConfidence = 0.30 // Small: high quality
+		} else if datasetSize < 200 {
+			adaptiveMinConfidence = 0.15 // Mid: balanced
+		} else {
+			adaptiveMinConfidence = 0.10 // Large: discovery-focused
+		}
+
+		if pattern.Confidence < adaptiveMinConfidence {
+			gologger.Debug().Msgf("Rejected pattern (confidence %.2f < %.2f, dataset=%d): %s",
+				pattern.Confidence, adaptiveMinConfidence, datasetSize, pattern.Template)
+			continue
+		}
+
+		// Check 3: DISABLED - single-char token check removed
+		// Rationale: Many valid single-char tokens (e.g., "d" for d1, d2, d3 environments)
+		// Users can post-filter if needed - prioritize discovery over precision
+
+		// Pattern passes all checks
+		filtered = append(filtered, pattern)
+	}
+
+	gologger.Verbose().Msgf("Token quality filtering: %d → %d patterns (removed %d low-quality)",
+		len(patterns), len(filtered), len(patterns)-len(filtered))
+	return filtered
+}

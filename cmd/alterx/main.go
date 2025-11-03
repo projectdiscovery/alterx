@@ -28,6 +28,7 @@ func main() {
 		Limit:    cliOpts.Limit,
 		Enrich:   cliOpts.Enrich, // Original: enrich word payloads from input
 		MaxSize:  cliOpts.MaxSize,
+		Mode:     cliOpts.Mode, // Pass pattern generation mode to mutator
 	}
 
 	if cliOpts.PermutationConfig != "" {
@@ -44,21 +45,8 @@ func main() {
 		}
 	}
 
-	// Learn patterns from input domains if mode is inferred or both
-	if cliOpts.Mode == "inferred" || cliOpts.Mode == "both" {
-		learnedPatterns := learnPatternsFromDomains(cliOpts.Domains)
-		if len(learnedPatterns) > 0 {
-			if cliOpts.Mode == "both" {
-				// Merge learned patterns with manual patterns
-				alterOpts.Patterns = append(alterOpts.Patterns, learnedPatterns...)
-				gologger.Info().Msgf("Using %d manual + %d learned patterns", len(alterOpts.Patterns)-len(learnedPatterns), len(learnedPatterns))
-			} else {
-				// Use only learned patterns
-				alterOpts.Patterns = learnedPatterns
-				gologger.Info().Msgf("Using %d learned patterns", len(learnedPatterns))
-			}
-		}
-	}
+	// Pattern learning is handled by the mutator based on Mode
+	// (see mutator.go New() function which calls InferPatterns() based on opts.Mode)
 
 	// configure output writer
 	var output io.Writer
@@ -121,10 +109,6 @@ func handleAnalyzeMode(opts *runner.Options) {
 		avgConfidence /= float64(len(learnedPatterns))
 	}
 
-	// Print concise summary to stderr (so it doesn't interfere with stdout YAML)
-	gologger.Info().Msgf("Patterns: %d | Coverage: %d domains | Avg confidence: %.2f",
-		len(learnedPatterns), totalCoverage, avgConfidence)
-
 	// Prepare output structure matching permutations.yaml specification
 	outputConfig := struct {
 		LearnedPatterns []*alterx.LearnedPattern `yaml:"learned_patterns"`
@@ -165,12 +149,12 @@ func handleAnalyzeMode(opts *runner.Options) {
 #   Templates use AlterX DSL syntax with variable placeholders.
 #   - Positional variables: {{p0}}, {{p1}}, {{p2}}, etc. for discovered tokens
 #   - Semantic variables: {{env}}, {{service}}, {{region}}, etc. (if classified)
-#   - Number variables: {{number}} for numeric sequences (with ±5 inference)
+#   - Number variables: {{number}} for numeric sequences (with ±1/±2 inference)
 #   - Built-in variables: {{root}}, {{suffix}}, {{sub}}, {{tld}}
 #
 # NUMBER INFERENCE:
-#   When numeric tokens are detected, the system infers a range by ±5.
-#   Example: If "01", "02", "03" are found, generates range "01" to "08".
+#   When numeric tokens are detected, the system infers a range by ±1 (or ±2 if min-1 < 0).
+#   Example: If "01", "02", "03" are found, generates range "00" to "04".
 #   These are mapped to the {{number}} payload type for reuse.
 #
 # To use these patterns:
@@ -195,6 +179,32 @@ func handleAnalyzeMode(opts *runner.Options) {
 		// Output to stdout (default behavior)
 		os.Stdout.Write(fullData)
 	}
+
+	// Calculate estimated permutations for the learned patterns
+	estimatedPermutations := 0
+	// Create temporary mutator to estimate permutations using already-learned patterns
+	// Extract template strings from learned patterns
+	templates := make([]string, 0, len(learnedPatterns))
+	for _, p := range learnedPatterns {
+		templates = append(templates, p.Template)
+	}
+
+	alterOpts := alterx.Options{
+		Domains:         opts.Domains,
+		Payloads:        make(map[string][]string),
+		Patterns:        templates,        // Use already-learned patterns
+		LearnedPatterns: learnedPatterns,  // Pass learned patterns directly to avoid re-learning
+		Mode:            "default",        // Don't trigger re-learning
+	}
+
+	// Create mutator to estimate permutations
+	if m, err := alterx.New(&alterOpts); err == nil {
+		estimatedPermutations = m.EstimateCount()
+	}
+
+	// Print comprehensive summary to stderr (after YAML output)
+	gologger.Info().Msgf("Input: %d domains | Patterns: %d | Coverage: %d domains | Avg confidence: %.2f | Estimated permutations: %d",
+		len(opts.Domains), len(learnedPatterns), totalCoverage, avgConfidence, estimatedPermutations)
 }
 
 // learnPatternsFromDomains learns patterns from domains and returns DSL template strings

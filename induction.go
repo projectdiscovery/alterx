@@ -100,16 +100,24 @@ func (pi *PatternInducer) InferPatterns() ([]*LearnedPattern, error) {
 		// Build payloads map from DSLVariable array
 		payloads := make(map[string]interface{})
 		for _, variable := range pattern.Variables {
-			// Number variables use structured NumberRange
-			if variable.NumberRange != nil {
+			// Check if enrichment added optional marker ("") to Payloads
+			// If Payloads contains "", prefer it over NumberRange (enriched variable)
+			hasOptionalMarker := len(variable.Payloads) > 0 && variable.Payloads[0] == ""
+
+			if variable.NumberRange != nil && !hasOptionalMarker {
+				// Number variable without enrichment - use NumberRange directly
 				payloads[variable.Name] = variable.NumberRange
 				gologger.Verbose().Msgf("Variable %s: NumberRange{Start: %d, End: %d, Format: %s, Step: %d, Type: %s}",
 					variable.Name, variable.NumberRange.Start, variable.NumberRange.End,
 					variable.NumberRange.Format, variable.NumberRange.Step, variable.NumberRange.Type)
 			} else {
-				// Word/literal variables use string arrays
+				// Word/literal variables OR enriched number variables use string arrays
 				payloads[variable.Name] = variable.Payloads
-				gologger.Verbose().Msgf("Variable %s: %v (type: %s)", variable.Name, variable.Payloads, variable.Type)
+				if hasOptionalMarker {
+					gologger.Verbose().Msgf("Variable %s: %v (optional, enriched)", variable.Name, variable.Payloads)
+				} else {
+					gologger.Verbose().Msgf("Variable %s: %v (type: %s)", variable.Name, variable.Payloads, variable.Type)
+				}
 			}
 		}
 

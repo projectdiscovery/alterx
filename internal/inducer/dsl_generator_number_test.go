@@ -24,7 +24,7 @@ func TestDSLGenerator_NumberRangeCompression(t *testing.T) {
 				"api-dev-02.example.com",
 				"api-dev-03.example.com",
 			},
-			expectedRange: "00-08", // min(01)-5=0, max(03)+5=08 (with leading zeros)
+			expectedRange: "00-04", // min(01)-1=0, max(03)+1=04 (with leading zeros)
 			expectedInTemplate: true,
 		},
 		{
@@ -34,7 +34,7 @@ func TestDSLGenerator_NumberRangeCompression(t *testing.T) {
 				"web6.example.com",
 				"web7.example.com",
 			},
-			expectedRange: "0-12", // min(5)-5=0, max(7)+5=12
+			expectedRange: "4-8", // min(5)-1=4, max(7)+1=8
 			expectedInTemplate: true,
 		},
 		{
@@ -44,7 +44,7 @@ func TestDSLGenerator_NumberRangeCompression(t *testing.T) {
 				"db-101.example.com",
 				"db-102.example.com",
 			},
-			expectedRange: "95-107", // min(100)-5=95, max(102)+5=107
+			expectedRange: "99-103", // min(100)-1=99, max(102)+1=103
 			expectedInTemplate: true,
 		},
 		{
@@ -54,7 +54,7 @@ func TestDSLGenerator_NumberRangeCompression(t *testing.T) {
 				"app09.example.com",
 				"app10.example.com",
 			},
-			expectedRange: "03-15", // min(08)-5=03, max(10)+5=15 (keeps leading zero format)
+			expectedRange: "07-11", // min(08)-1=07, max(10)+1=11 (keeps leading zero format)
 			expectedInTemplate: true,
 		},
 	}
@@ -144,10 +144,10 @@ func TestDSLGenerator_NumberRangeEstimation(t *testing.T) {
 	require.NotNil(t, pattern)
 
 	// Pattern should be: api-dev-{{number}}.{{root}}
-	// Range: 00-08 (9 numbers total)
-	// Expected generations: 9
+	// Range: 00-04 (5 numbers total)
+	// Expected generations: 5
 	// Observed: 3
-	// Ratio: 9/3 = 3.0
+	// Ratio: 5/3 = 1.67
 
 	t.Logf("Pattern: %s", pattern.Template)
 	t.Logf("Coverage: %d", pattern.Coverage)
@@ -155,7 +155,7 @@ func TestDSLGenerator_NumberRangeEstimation(t *testing.T) {
 	t.Logf("Confidence: %.2f", pattern.Confidence)
 
 	assert.Equal(t, 3, pattern.Coverage, "Coverage should be 3")
-	assert.InDelta(t, 3.0, pattern.Ratio, 0.5, "Ratio should be ~3.0 (9 generations / 3 observed)")
+	assert.InDelta(t, 1.67, pattern.Ratio, 0.5, "Ratio should be ~1.67 (5 generations / 3 observed)")
 }
 
 func TestDSLGenerator_CompressNumberRange(t *testing.T) {
@@ -172,35 +172,35 @@ func TestDSLGenerator_CompressNumberRange(t *testing.T) {
 			name:          "leading zeros preserved",
 			input:         []string{"01", "02", "03"},
 			expectedStart: 0,
-			expectedEnd:   8,
+			expectedEnd:   4,
 			expectedFormat: "%02d",
 		},
 		{
 			name:          "no leading zeros",
 			input:         []string{"5", "6", "7"},
-			expectedStart: 0,
-			expectedEnd:   12,
+			expectedStart: 4,
+			expectedEnd:   8,
 			expectedFormat: "%d",
 		},
 		{
 			name:          "large numbers",
 			input:         []string{"100", "101", "102"},
-			expectedStart: 95,
-			expectedEnd:   107,
+			expectedStart: 99,
+			expectedEnd:   103,
 			expectedFormat: "%d",
 		},
 		{
 			name:          "single number",
 			input:         []string{"42"},
-			expectedStart: 37,
-			expectedEnd:   47,
+			expectedStart: 41,
+			expectedEnd:   43,
 			expectedFormat: "%d",
 		},
 		{
 			name:          "mixed digits (takes max digit count)",
 			input:         []string{"08", "09", "10"},
-			expectedStart: 3,
-			expectedEnd:   15,
+			expectedStart: 7,
+			expectedEnd:   11,
 			expectedFormat: "%02d",
 		},
 	}
@@ -298,13 +298,13 @@ func TestDSLGenerator_MixedVariablesWithNumberRange(t *testing.T) {
 	// Should have: {{p0}}-{{p0}}-{{number}}.{{root}}
 	// p0 (first instance): [api, web] = 2 items
 	// p0 (second instance): [dev, prod] = 2 items
-	// number: [00-08] = 9 items (range)
-	// Total: 2 * 2 * 9 = 36 generations
+	// number: [00-04] = 5 items (range)
+	// Total: 2 * 2 * 5 = 20 generations
 	// Observed: 4
-	// Ratio: 36 / 4 = 9.0
+	// Ratio: 20 / 4 = 5.0
 
 	assert.Contains(t, pattern.Template, "{{number}}")
 	assert.Contains(t, pattern.Template, "{{root}}")
 	assert.NotContains(t, pattern.Template, "{{suffix}}")
-	assert.InDelta(t, 9.0, pattern.Ratio, 1.0, "Ratio should account for range expansion")
+	assert.InDelta(t, 5.0, pattern.Ratio, 1.0, "Ratio should account for range expansion")
 }

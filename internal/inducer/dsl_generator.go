@@ -387,12 +387,16 @@ func (dg *DSLGenerator) compressNumberRange(numbers []string) *NumberRange {
 		}
 	}
 
-	// Add ±5 buffer
-	minVal = minVal - 5
-	if minVal < 0 {
+	// Add ±1 buffer (or ±2 if min-1 would be negative)
+	if minVal-1 < 0 {
+		// Can't subtract from min, so add extra to max
 		minVal = 0
+		maxVal = maxVal + 2
+	} else {
+		// Normal ±1 buffer
+		minVal = minVal - 1
+		maxVal = maxVal + 1
 	}
-	maxVal = maxVal + 5
 
 	// Determine format string
 	var formatStr string
