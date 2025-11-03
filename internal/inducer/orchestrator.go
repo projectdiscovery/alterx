@@ -72,27 +72,25 @@ func CalculateDynamicMinCoverage(inputSize int) int {
 //    - Strategy 1: Global edit distance clustering
 //    - Strategy 2: N-gram prefix anchoring (TODO)
 //    - Strategy 3: Token-level prefix + edit distance (TODO)
-// 3. Generate patterns from closures
-// 4. Compress number ranges
-// 5. Quality filtering
-// 6. Deduplicate
+// 3. Generate DSL patterns directly from closures (bypasses regex generation)
+// 4. Quality filtering
+// 5. Deduplicate
 //
 // IMPORTANT: This is designed to work FIRST, not to scale.
 // We will profile and optimize AFTER it works correctly.
 type Orchestrator struct {
-	config    *OrchestratorConfig
-	generator *PatternGenerator
-	compressor *NumberCompressor
+	config       *OrchestratorConfig
+	dslGenerator *DSLGenerator
 
 	// Data structures
 	domains     []string            // Input domains
 	edm         *EditDistanceMemo   // Edit distance memoization table (FULL O(N²))
-	allPatterns []*Pattern          // Accumulated patterns from all strategies
+	allPatterns []*DSLPattern       // Accumulated patterns from all strategies
 
 	// Per-strategy pattern tracking
-	strategy1Patterns []*Pattern // Patterns from global clustering
-	strategy2Patterns []*Pattern // Patterns from n-gram prefix anchoring
-	strategy3Patterns []*Pattern // Patterns from token-level clustering
+	strategy1Patterns []*DSLPattern // Patterns from global clustering
+	strategy2Patterns []*DSLPattern // Patterns from n-gram prefix anchoring
+	strategy3Patterns []*DSLPattern // Patterns from token-level clustering
 }
 
 // NewOrchestrator creates a new pattern induction orchestrator
@@ -103,21 +101,34 @@ func NewOrchestrator(config *OrchestratorConfig) *Orchestrator {
 
 	return &Orchestrator{
 		config:            config,
-		generator:         NewPatternGenerator(),
-		compressor:        NewNumberCompressor(),
+		dslGenerator:      NewDSLGenerator(nil), // No semantic dictionary for now
 		edm:               NewEditDistanceMemo(),
-		allPatterns:       []*Pattern{},
-		strategy1Patterns: []*Pattern{},
-		strategy2Patterns: []*Pattern{},
-		strategy3Patterns: []*Pattern{},
+		allPatterns:       []*DSLPattern{},
+		strategy1Patterns: []*DSLPattern{},
+		strategy2Patterns: []*DSLPattern{},
+		strategy3Patterns: []*DSLPattern{},
+	}
+}
+
+// SetTokenDictionary updates the token dictionary for semantic classification
+// This should be called before LearnPatterns() to enable semantic token naming
+func (o *Orchestrator) SetTokenDictionary(dict *TokenDictionary) {
+	if dict != nil {
+		o.dslGenerator = NewDSLGenerator(dict)
 	}
 }
 
 // LearnPatterns executes the complete pattern induction pipeline
-// This implements the ORIGINAL regulator algorithm
+// WITH level-based grouping to respect structural depth boundaries
 //
-// Returns learned patterns or error
-func (o *Orchestrator) LearnPatterns(domains []string) ([]*Pattern, error) {
+// New Architecture:
+// 1. Group domains by level count (structural depth)
+// 2. Process each level group independently (avoids mixing different structures)
+// 3. Apply all 3 clustering strategies per level group
+// 4. Merge patterns from all groups
+//
+// Returns learned DSL patterns or error
+func (o *Orchestrator) LearnPatterns(domains []string) ([]*DSLPattern, error) {
 	if len(domains) == 0 {
 		return nil, fmt.Errorf("no domains provided")
 	}
@@ -126,49 +137,84 @@ func (o *Orchestrator) LearnPatterns(domains []string) ([]*Pattern, error) {
 
 	// Calculate dynamic minimum coverage threshold to prevent pattern explosion
 	o.config.MinCoverage = CalculateDynamicMinCoverage(len(domains))
-	gologger.Info().Msgf("Starting pattern induction on %d domains (min coverage: %d)", len(domains), o.config.MinCoverage)
+	gologger.Verbose().Msgf("Starting pattern induction on %d domains (min coverage: %d)", len(domains), o.config.MinCoverage)
 
-	// STEP 1: Build full edit distance MEMO table
-	// This is O(N²) space - the "bottleneck" we'll profile later
-	gologger.Info().Msg("Building edit distance MEMO table...")
-	if err := o.buildMemoTable(); err != nil {
-		return nil, fmt.Errorf("failed to build MEMO table: %w", err)
+	// STEP 1: Group domains by level count (structural depth)
+	// This prevents mixing domains with different hierarchical structures
+	// e.g., "api.example.com" (1 level) vs "scheduler.api.example.com" (2 levels)
+	gologger.Verbose().Msg("Step 1: Grouping domains by level count...")
+	levelGroups, err := GroupByLevelCount(domains)
+	if err != nil {
+		return nil, fmt.Errorf("failed to group by level count: %w", err)
 	}
-	gologger.Info().Msgf("MEMO table built: %d entries", o.edm.Size())
+	PrintLevelGroupStats(levelGroups)
 
-	// STEP 2: Build Trie index for prefix lookups (for Strategy 2 & 3)
-	gologger.Info().Msg("Building Trie index...")
-	trie := NewTrie(domains)
-	trieStats := trie.GetStats()
-	gologger.Info().Msgf("Trie built: %d nodes, max depth %d", trieStats.TotalNodes, trieStats.MaxDepth)
+	// STEP 2: Process each level group independently
+	gologger.Verbose().Msgf("Step 2: Processing %d level groups...", len(levelGroups))
+	sortedGroups := GetSortedLevelGroups(levelGroups)
 
-	// STEP 3: Strategy 1 - Global edit distance clustering
-	gologger.Info().Msg("Strategy 1: Global edit distance clustering...")
-	if err := o.strategyGlobalClustering(); err != nil {
-		return nil, fmt.Errorf("strategy 1 failed: %w", err)
+	for i, group := range sortedGroups {
+		gologger.Verbose().Msgf("Processing group %d/%d: level=%d (%d domains)",
+			i+1, len(sortedGroups), group.LevelCount, len(group.Domains))
+
+		// Process this level group
+		if err := o.processLevelGroup(group); err != nil {
+			gologger.Warning().Msgf("Failed to process level group %d: %v", group.LevelCount, err)
+			continue
+		}
 	}
-	gologger.Info().Msgf("Strategy 1 complete: %d patterns found", len(o.strategy1Patterns))
 
-	// STEP 4: Strategy 2 - N-gram prefix anchoring
-	gologger.Info().Msg("Strategy 2: N-gram prefix anchoring...")
-	if err := o.strategyNgramPrefix(trie); err != nil {
-		return nil, fmt.Errorf("strategy 2 failed: %w", err)
-	}
-	gologger.Info().Msgf("Strategy 2 complete: %d patterns found", len(o.strategy2Patterns))
-
-	// STEP 5: Strategy 3 - Token-level prefix + clustering
-	gologger.Info().Msg("Strategy 3: Token-level clustering...")
-	if err := o.strategyTokenLevel(trie); err != nil {
-		return nil, fmt.Errorf("strategy 3 failed: %w", err)
-	}
-	gologger.Info().Msgf("Strategy 3 complete: %d patterns found", len(o.strategy3Patterns))
-
-	// STEP 6: Post-processing (compression, quality, dedupe)
-	gologger.Info().Msg("Post-processing patterns...")
+	// STEP 3: Post-processing (compression, quality, dedupe)
+	gologger.Verbose().Msg("Step 3: Post-processing patterns...")
 	finalPatterns := o.postProcess()
 
-	gologger.Info().Msgf("Pattern induction complete: %d final patterns", len(finalPatterns))
+	gologger.Verbose().Msgf("Pattern induction complete: %d final patterns", len(finalPatterns))
 	return finalPatterns, nil
+}
+
+// processLevelGroup processes a single level group through all 3 strategies
+// This is the core of the level-aware pattern induction
+func (o *Orchestrator) processLevelGroup(group *LevelGroup) error {
+	groupDomains := group.Domains
+
+	// Dynamic minimum coverage based on group size (not global size)
+	groupMinCoverage := CalculateDynamicMinCoverage(len(groupDomains))
+	if groupMinCoverage < 2 {
+		groupMinCoverage = 2
+	}
+
+	gologger.Debug().Msgf("  Group min coverage: %d", groupMinCoverage)
+
+	// Build local MEMO table for this group only
+	// This keeps memory bounded per group
+	gologger.Debug().Msg("  Building local MEMO table...")
+	localMemo := NewEditDistanceMemo()
+	localMemo.PrecomputeDistances(groupDomains)
+	gologger.Debug().Msgf("  Local MEMO table: %d entries", localMemo.Size())
+
+	// Build local Trie for this group
+	gologger.Debug().Msg("  Building local Trie...")
+	localTrie := NewTrie(groupDomains)
+
+	// Strategy 1: Global clustering within this level group
+	gologger.Debug().Msg("  Strategy 1: Global clustering (within level group)...")
+	if err := o.strategyGlobalClusteringWithMemo(groupDomains, localMemo, groupMinCoverage); err != nil {
+		return fmt.Errorf("strategy 1 failed: %w", err)
+	}
+
+	// Strategy 2: N-gram prefix anchoring within this level group
+	gologger.Debug().Msg("  Strategy 2: N-gram prefix (within level group)...")
+	if err := o.strategyNgramPrefixWithMemo(localTrie, groupDomains, localMemo, groupMinCoverage); err != nil {
+		return fmt.Errorf("strategy 2 failed: %w", err)
+	}
+
+	// Strategy 3: Token-level clustering within this level group
+	gologger.Debug().Msg("  Strategy 3: Token-level (within level group)...")
+	if err := o.strategyTokenLevelWithMemo(localTrie, groupDomains, localMemo, groupMinCoverage); err != nil {
+		return fmt.Errorf("strategy 3 failed: %w", err)
+	}
+
+	return nil
 }
 
 // buildMemoTable creates the full O(N²) edit distance table
@@ -199,21 +245,14 @@ func (o *Orchestrator) strategyGlobalClustering() error {
 				continue
 			}
 
-			// Generate pattern
-			pattern, err := o.generator.GeneratePattern(closure)
+			// Generate DSL pattern directly (no regex intermediate step)
+			pattern, err := o.dslGenerator.GeneratePattern(closure)
 			if err != nil {
 				continue
 			}
 
-			// Compress numbers
-			if o.config.EnableCompression {
-				o.compressor.CompressPattern(pattern)
-			}
-
-			// Quality filtering (sets Ratio field)
-			if o.isGoodPattern(pattern) {
-				// Update confidence now that ratio is calculated
-				pattern.UpdateConfidence()
+			// Quality filtering (ratio already calculated in GeneratePattern)
+			if pattern.PassesQualityFilter() {
 				o.strategy1Patterns = append(o.strategy1Patterns, pattern)
 				o.allPatterns = append(o.allPatterns, pattern)
 			}
@@ -283,34 +322,8 @@ func (o *Orchestrator) closureKey(domains []string) string {
 	return key
 }
 
-// isGoodPattern implements regulator's quality filtering logic
-// Rejects patterns that generate too many subdomains relative to observed
-func (o *Orchestrator) isGoodPattern(pattern *Pattern) bool {
-	// Calculate how many subdomains this pattern could generate
-	generativity := o.estimateGenerativity(pattern)
-
-	// Auto-accept small patterns
-	if generativity < o.config.AbsoluteLimit {
-		return true
-	}
-
-	// Ratio test for larger patterns
-	ratio := float64(generativity) / float64(pattern.Coverage)
-	pattern.Ratio = ratio
-
-	return ratio < o.config.MaxRatio
-}
-
-// estimateGenerativity estimates how many domains a pattern generates
-// Parses the regex pattern and calculates the total number of possible combinations
-// by multiplying the counts of alternations, character classes, and optional groups
-func (o *Orchestrator) estimateGenerativity(pattern *Pattern) int {
-	if pattern.Regex == "" {
-		return 1
-	}
-
-	return estimateRegexGenerativity(pattern.Regex)
-}
+// Note: Quality filtering is now handled by DSLPattern.PassesQualityFilter()
+// The ratio calculation is done during pattern generation in DSLGenerator
 
 // estimateRegexGenerativity calculates how many strings a regex pattern can generate
 // This handles the specific regex constructs used by the pattern generator:
@@ -586,17 +599,17 @@ func findClosingBracket(s string, start int) int {
 }
 
 // postProcess handles quality filtering and deduplication
-func (o *Orchestrator) postProcess() []*Pattern {
+func (o *Orchestrator) postProcess() []*DSLPattern {
 	patterns := o.allPatterns
 
-	// Step 1: Deduplicate by regex (remove exact duplicates)
+	// Step 1: Deduplicate by template (remove exact duplicates)
 	if o.config.EnableDedupe {
 		seen := make(map[string]bool)
-		unique := []*Pattern{}
+		unique := []*DSLPattern{}
 
 		for _, pattern := range patterns {
-			if !seen[pattern.Regex] {
-				seen[pattern.Regex] = true
+			if !seen[pattern.Template] {
+				seen[pattern.Template] = true
 				unique = append(unique, pattern)
 			}
 		}
@@ -606,7 +619,7 @@ func (o *Orchestrator) postProcess() []*Pattern {
 	}
 
 	// Step 2: Subsumption filtering (remove patterns subsumed by broader ones)
-	patterns = FilterSubsumedPatterns(patterns)
+	patterns = FilterSubsumedDSLPatterns(patterns)
 
 	return patterns
 }
@@ -684,20 +697,14 @@ func (o *Orchestrator) strategyNgramPrefix(trie *Trie) error {
 						continue
 					}
 
-					pattern, err := o.generator.GeneratePattern(closure)
+					// Generate DSL pattern directly
+					pattern, err := o.dslGenerator.GeneratePattern(closure)
 					if err != nil {
 						continue
 					}
 
-					// Compress numbers
-					if o.config.EnableCompression {
-						o.compressor.CompressPattern(pattern)
-					}
-
-					// Quality filtering (sets Ratio field)
-					if o.isGoodPattern(pattern) {
-						// Update confidence now that ratio is calculated
-						pattern.UpdateConfidence()
+					// Quality filtering
+					if pattern.PassesQualityFilter() {
 						o.strategy2Patterns = append(o.strategy2Patterns, pattern)
 						o.allPatterns = append(o.allPatterns, pattern)
 					}
@@ -749,20 +756,14 @@ func (o *Orchestrator) strategyTokenLevel(trie *Trie) error {
 					continue
 				}
 
-				pattern, err := o.generator.GeneratePattern(closure)
+				// Generate DSL pattern directly
+				pattern, err := o.dslGenerator.GeneratePattern(closure)
 				if err != nil {
 					continue
 				}
 
-				// Compress numbers
-				if o.config.EnableCompression {
-					o.compressor.CompressPattern(pattern)
-				}
-
-				// Quality filtering (sets Ratio field)
-				if o.isGoodPattern(pattern) {
-					// Update confidence now that ratio is calculated
-					pattern.UpdateConfidence()
+				// Quality filtering
+				if pattern.PassesQualityFilter() {
 					o.strategy3Patterns = append(o.strategy3Patterns, pattern)
 					o.allPatterns = append(o.allPatterns, pattern)
 				}
@@ -811,4 +812,126 @@ func (o *Orchestrator) editClosuresWithMemo(domains []string, delta int, memo *E
 	}
 
 	return closures
+}
+
+// strategyGlobalClusteringWithMemo implements Strategy 1 using a local MEMO table
+// This is used when processing suffix groups independently
+func (o *Orchestrator) strategyGlobalClusteringWithMemo(domains []string, memo *EditDistanceMemo, minCoverage int) error {
+	// Try multiple delta values (k=2, k=3, ..., k=10)
+	for k := o.config.DistLow; k <= o.config.DistHigh; k++ {
+		// Find edit closures with this delta using local memo
+		closures := o.editClosuresWithMemo(domains, k, memo)
+
+		// Generate patterns from each closure
+		for _, closure := range closures {
+			// Skip patterns with insufficient coverage
+			if len(closure.Domains) < minCoverage {
+				continue
+			}
+
+			// Generate DSL pattern directly (no regex intermediate step)
+			pattern, err := o.dslGenerator.GeneratePattern(closure)
+			if err != nil {
+				continue
+			}
+
+			// Quality filtering (ratio already calculated in GeneratePattern)
+			if pattern.PassesQualityFilter() {
+				o.strategy1Patterns = append(o.strategy1Patterns, pattern)
+				o.allPatterns = append(o.allPatterns, pattern)
+			}
+		}
+	}
+
+	return nil
+}
+
+// strategyNgramPrefixWithMemo implements Strategy 2 using local data structures
+// This is used when processing suffix groups independently
+func (o *Orchestrator) strategyNgramPrefixWithMemo(trie *Trie, domains []string, memo *EditDistanceMemo, minCoverage int) error {
+	// Try different N-gram sizes (1, 2, 3)
+	for n := 1; n <= 3; n++ {
+		// Get prefix groups from local Trie
+		prefixGroups := trie.GetNgramPrefixes(n)
+
+		// Process each prefix group independently
+		for _, domainIDs := range prefixGroups {
+			if len(domainIDs) <= 1 {
+				continue // Skip single-domain groups
+			}
+
+			// Extract actual domain strings
+			groupDomains := make([]string, len(domainIDs))
+			for i, id := range domainIDs {
+				groupDomains[i] = domains[id]
+			}
+
+			// Apply clustering with different deltas
+			for k := o.config.DistLow; k <= o.config.DistHigh; k++ {
+				closures := o.editClosuresWithMemo(groupDomains, k, memo)
+
+				// Generate patterns from closures
+				for _, closure := range closures {
+					// Skip patterns with insufficient coverage
+					if len(closure.Domains) < minCoverage {
+						continue
+					}
+
+					// Generate DSL pattern directly
+					pattern, err := o.dslGenerator.GeneratePattern(closure)
+					if err != nil {
+						continue
+					}
+
+					// Quality filtering
+					if pattern.PassesQualityFilter() {
+						o.strategy2Patterns = append(o.strategy2Patterns, pattern)
+						o.allPatterns = append(o.allPatterns, pattern)
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// strategyTokenLevelWithMemo implements Strategy 3 using local data structures
+// This is used when processing suffix groups independently
+func (o *Orchestrator) strategyTokenLevelWithMemo(trie *Trie, domains []string, memo *EditDistanceMemo, minCoverage int) error {
+	// Get token groups from local Trie
+	tokenGroups := trie.GetTokenGroupDomains()
+
+	// Process each token group
+	for _, groupDomains := range tokenGroups {
+		if len(groupDomains) <= 1 {
+			continue
+		}
+
+		// Apply clustering with different deltas
+		for k := o.config.DistLow; k <= o.config.DistHigh; k++ {
+			closures := o.editClosuresWithMemo(groupDomains, k, memo)
+
+			for _, closure := range closures {
+				// Skip patterns with insufficient coverage
+				if len(closure.Domains) < minCoverage {
+					continue
+				}
+
+				// Generate DSL pattern directly
+				pattern, err := o.dslGenerator.GeneratePattern(closure)
+				if err != nil {
+					continue
+				}
+
+				// Quality filtering
+				if pattern.PassesQualityFilter() {
+					o.strategy3Patterns = append(o.strategy3Patterns, pattern)
+					o.allPatterns = append(o.allPatterns, pattern)
+				}
+			}
+		}
+	}
+
+	return nil
 }

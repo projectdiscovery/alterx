@@ -7,6 +7,23 @@ import (
 	"strings"
 )
 
+// ============================================================================
+// DEPRECATED: This file contains the OLD regex-based pattern generation approach
+//
+// Status: AWAITING DELETION - Pending orchestrator integration completion
+//
+// The new architecture uses DSLGenerator (dsl_generator.go) which generates
+// AlterX DSL patterns directly, bypassing regex entirely. This is simpler,
+// more maintainable, and more semantic.
+//
+// This file will be DELETED once:
+// 1. Orchestrator is updated to use DSLGenerator instead of PatternGenerator
+// 2. induction.go is updated to work with DSLPattern instead of Pattern
+// 3. All tests pass with the new approach
+//
+// DO NOT USE PatternGenerator for new code. Use DSLGenerator instead.
+// ============================================================================
+
 // Pattern represents a learned regex pattern
 type Pattern struct {
 	Regex     string   // The generated regex pattern
@@ -19,9 +36,13 @@ type Pattern struct {
 // PatternGenerator converts closures into regex patterns
 // Implements the closure_to_regex algorithm from regulator
 // Patterns are root-agnostic (only represent subdomain structure)
+//
+// DEPRECATED: Use DSLGenerator instead
 type PatternGenerator struct{}
 
 // NewPatternGenerator creates a new pattern generator
+//
+// DEPRECATED: Use NewDSLGenerator instead
 func NewPatternGenerator() *PatternGenerator {
 	return &PatternGenerator{}
 }

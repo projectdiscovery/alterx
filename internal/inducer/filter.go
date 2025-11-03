@@ -61,7 +61,7 @@ func FilterSubsumedPatterns(patterns []*Pattern) []*Pattern {
 		}
 	}
 
-	gologger.Info().Msgf("Subsumption filtering: %d patterns removed, %d kept", subsumptionCount, len(filtered))
+	gologger.Verbose().Msgf("Subsumption filtering: %d patterns removed, %d kept", subsumptionCount, len(filtered))
 	return filtered
 }
 
@@ -142,4 +142,79 @@ func PatternSimilarity(p1, p2 *Pattern) float64 {
 
 	// Jaccard similarity: |A ∩ B| / |A ∪ B|
 	return float64(intersection) / float64(union)
+}
+
+// FilterSubsumedDSLPatterns removes DSL patterns that are subsumed by broader patterns
+// This is the DSL version of FilterSubsumedPatterns
+func FilterSubsumedDSLPatterns(patterns []*DSLPattern) []*DSLPattern {
+	if len(patterns) <= 1 {
+		return patterns
+	}
+
+	gologger.Debug().Msgf("Filtering subsumed DSL patterns from %d patterns", len(patterns))
+
+	// Sort by coverage (descending) so we keep broader patterns first
+	sorted := make([]*DSLPattern, len(patterns))
+	copy(sorted, patterns)
+	sort.Slice(sorted, func(i, j int) bool {
+		// Primary: Coverage (descending)
+		if sorted[i].Coverage != sorted[j].Coverage {
+			return sorted[i].Coverage > sorted[j].Coverage
+		}
+		// Secondary: Confidence (descending)
+		return sorted[i].Confidence > sorted[j].Confidence
+	})
+
+	filtered := []*DSLPattern{}
+	subsumptionCount := 0
+
+	for _, pattern := range sorted {
+		isSubsumed := false
+
+		// Check if this pattern is subsumed by any already-kept pattern
+		for _, kept := range filtered {
+			if dslPatternSubsumes(kept, pattern) {
+				isSubsumed = true
+				subsumptionCount++
+				gologger.Debug().Msgf("DSL Pattern '%s' (coverage: %d) subsumed by '%s' (coverage: %d)",
+					pattern.Template, pattern.Coverage, kept.Template, kept.Coverage)
+				break
+			}
+		}
+
+		if !isSubsumed {
+			filtered = append(filtered, pattern)
+		}
+	}
+
+	gologger.Verbose().Msgf("Subsumption filtering: %d patterns removed, %d kept", subsumptionCount, len(filtered))
+	return filtered
+}
+
+// dslPatternSubsumes checks if DSL pattern A subsumes DSL pattern B
+func dslPatternSubsumes(broader, narrower *DSLPattern) bool {
+	// Can't subsume if broader has lower coverage
+	if broader.Coverage < narrower.Coverage {
+		return false
+	}
+
+	// Can't subsume if patterns are identical
+	if broader.Template == narrower.Template {
+		return false
+	}
+
+	// Check if all of narrower's domains are in broader's domains
+	broaderDomains := make(map[string]bool, len(broader.Domains))
+	for _, domain := range broader.Domains {
+		broaderDomains[domain] = true
+	}
+
+	// Check if all narrower domains exist in broader
+	for _, domain := range narrower.Domains {
+		if !broaderDomains[domain] {
+			return false
+		}
+	}
+
+	return true
 }

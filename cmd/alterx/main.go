@@ -94,10 +94,8 @@ func main() {
 
 }
 
-// handleAnalyzeMode learns patterns from input domains and outputs to config file
+// handleAnalyzeMode learns patterns from input domains and outputs to config file or stdout
 func handleAnalyzeMode(opts *runner.Options) {
-	gologger.Info().Msgf("Pattern learning mode: analyzing %d domains", len(opts.Domains))
-
 	// Create pattern inducer
 	// Pattern learning is root-agnostic (learns subdomain structures)
 	// opts.Domains: full enumerated subdomains to learn patterns from (e.g., api-dev.example.com)
@@ -112,6 +110,21 @@ func handleAnalyzeMode(opts *runner.Options) {
 		return
 	}
 
+	// Calculate summary statistics
+	totalCoverage := 0
+	avgConfidence := 0.0
+	for _, p := range learnedPatterns {
+		totalCoverage += p.Coverage
+		avgConfidence += p.Confidence
+	}
+	if len(learnedPatterns) > 0 {
+		avgConfidence /= float64(len(learnedPatterns))
+	}
+
+	// Print concise summary to stderr (so it doesn't interfere with stdout YAML)
+	gologger.Info().Msgf("Patterns: %d | Coverage: %d domains | Avg confidence: %.2f",
+		len(learnedPatterns), totalCoverage, avgConfidence)
+
 	// Prepare output structure matching permutations.yaml specification
 	outputConfig := struct {
 		LearnedPatterns []*alterx.LearnedPattern `yaml:"learned_patterns"`
@@ -125,12 +138,6 @@ func handleAnalyzeMode(opts *runner.Options) {
 		},
 	}
 
-	// Determine output file
-	outputFile := "learned_patterns.yaml"
-	if opts.Output != "" {
-		outputFile = opts.Output
-	}
-
 	// Marshal to YAML with proper formatting
 	data, err := yaml.Marshal(outputConfig)
 	if err != nil {
@@ -142,55 +149,52 @@ func handleAnalyzeMode(opts *runner.Options) {
 # Learned Patterns - Pattern Induction Results
 # ============================================================================
 # This file contains patterns learned from observed subdomains using the
-# pattern induction algorithm (based on the regulator algorithm with optimizations).
+# pattern induction algorithm (based on hierarchical partitioning and edit
+# distance clustering with optimizations for scalability).
 #
 # Each pattern includes:
 #   - id: Unique identifier
 #   - template: DSL template with positional variables ({{p0}}, {{p1}}, etc.)
-#   - regex: Original regex pattern (for analysis and debugging)
-#   - coverage: Number of input domains matched
-#   - ratio: possible_generations / observed_count
+#   - coverage: Number of input domains matched by this pattern
+#   - ratio: possible_generations / observed_count (lower is better)
 #   - confidence: Quality score (0.0-1.0, higher is better)
 #   - payloads: Inline payload definitions for positional variables
 #   - examples: Sample domains that match this pattern
 #
-# REGEX vs DSL:
-#   The 'regex' field shows the raw pattern learned from edit distance clustering.
-#   The 'template' field shows the AlterX-compatible DSL format for generation.
-#   Example: regex "(api|web)(-dev|-prod)" → template "{{p0}}{{p1}}.{{suffix}}"
+# TEMPLATE FORMAT:
+#   Templates use AlterX DSL syntax with variable placeholders.
+#   - Positional variables: {{p0}}, {{p1}}, {{p2}}, etc. for discovered tokens
+#   - Semantic variables: {{env}}, {{service}}, {{region}}, etc. (if classified)
+#   - Number variables: {{number}} for numeric sequences (with ±5 inference)
+#   - Built-in variables: {{root}}, {{suffix}}, {{sub}}, {{tld}}
+#
+# NUMBER INFERENCE:
+#   When numeric tokens are detected, the system infers a range by ±5.
+#   Example: If "01", "02", "03" are found, generates range "01" to "08".
+#   These are mapped to the {{number}} payload type for reuse.
 #
 # To use these patterns:
-# 1. Review the patterns, their confidence scores, and regex forms
+# 1. Review the patterns and their confidence scores
 # 2. Copy desired patterns to your permutations.yaml file
-# 3. Optionally classify payloads to semantic types in token_dictionary
-# 4. Use the regex field to understand the underlying pattern structure
+# 3. Optionally classify positional payloads to semantic types in token_dictionary
+# 4. Number payloads are automatically integrated with the {{number}} type
 # ============================================================================
 
 `)
 	fullData := append(header, data...)
 
-	// Write to file
-	if err := os.WriteFile(outputFile, fullData, 0644); err != nil {
-		gologger.Fatal().Msgf("Failed to write patterns to %s: %v", outputFile, err)
+	// Output to file or stdout depending on -o flag
+	if opts.Output != "" {
+		// Write to file
+		if err := os.WriteFile(opts.Output, fullData, 0644); err != nil {
+			gologger.Fatal().Msgf("Failed to write patterns to %s: %v", opts.Output, err)
+		}
+		absPath, _ := filepath.Abs(opts.Output)
+		gologger.Info().Msgf("Patterns written to: %s", absPath)
+	} else {
+		// Output to stdout (default behavior)
+		os.Stdout.Write(fullData)
 	}
-
-	absPath, _ := filepath.Abs(outputFile)
-	gologger.Info().Msgf("Learned patterns written to: %s", absPath)
-	gologger.Info().Msgf("Patterns discovered: %d", len(learnedPatterns))
-
-	// Log summary statistics
-	totalCoverage := 0
-	avgConfidence := 0.0
-	for _, p := range learnedPatterns {
-		totalCoverage += p.Coverage
-		avgConfidence += p.Confidence
-	}
-	if len(learnedPatterns) > 0 {
-		avgConfidence /= float64(len(learnedPatterns))
-	}
-
-	gologger.Info().Msgf("Total coverage: %d domains | Avg confidence: %.2f", totalCoverage, avgConfidence)
-	gologger.Info().Msg("Review patterns and add high-confidence ones to your permutations.yaml config")
 }
 
 // learnPatternsFromDomains learns patterns from domains and returns DSL template strings

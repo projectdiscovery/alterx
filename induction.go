@@ -12,14 +12,14 @@ import (
 // LearnedPattern represents a single learned pattern with all metadata
 // This structure matches the YAML specification in permutations.yaml
 type LearnedPattern struct {
-	ID         string              `yaml:"id"`                   // Unique identifier (e.g., "pattern_001")
-	Template   string              `yaml:"template"`             // DSL template (e.g., "{{p0}}-{{p1}}.{{suffix}}")
-	Regex      string              `yaml:"regex,omitempty"`      // Original regex pattern (for analysis/debugging)
-	Coverage   int                 `yaml:"coverage"`             // Number of input domains matched
-	Ratio      float64             `yaml:"ratio"`                // Possible generations / observed count
-	Confidence float64             `yaml:"confidence"`           // Quality score (0.0-1.0)
-	Payloads   map[string][]string `yaml:"payloads,omitempty"`   // Inline payloads for positional variables
-	Examples   []string            `yaml:"examples,omitempty"`   // Example domains (optional)
+	ID         string                 `yaml:"id"`                   // Unique identifier (e.g., "pattern_001")
+	Template   string                 `yaml:"template"`             // DSL template (e.g., "{{p0}}-{{p1}}.{{suffix}}")
+	Regex      string                 `yaml:"regex,omitempty"`      // Original regex pattern (for analysis/debugging)
+	Coverage   int                    `yaml:"coverage"`             // Number of input domains matched
+	Ratio      float64                `yaml:"ratio"`                // Possible generations / observed count
+	Confidence float64                `yaml:"confidence"`           // Quality score (0.0-1.0)
+	Payloads   map[string]interface{} `yaml:"payloads,omitempty"`   // Inline payloads: []string for literals, NumberRange for numbers
+	Examples   []string               `yaml:"examples,omitempty"`   // Example domains (optional)
 }
 
 // PatternInducer discovers patterns from passive subdomain enumeration results
@@ -45,23 +45,24 @@ func NewPatternInducer(passiveDomains []string, minFrequency int) *PatternInduce
 // Returns a list of structured LearnedPattern objects with full metadata
 //
 // Algorithm:
-// 1. Extract subdomains from full domains (filter root-only domains)
-// 2. Run hierarchical pattern induction on subdomain data (root-agnostic)
-// 3. Convert learned regex patterns to AlterX DSL format
-// 4. Filter by quality and confidence thresholds
-// 5. Return high-confidence patterns with all metadata
+// 1. Pass full domains to orchestrator (preserves root domain info)
+// 2. Orchestrator groups domains by level count (structural depth)
+// 3. Run pattern induction on each level group independently
+// 4. DSL generator creates patterns with {{root}} placeholder
+// 5. Filter by quality and confidence thresholds
+// 6. Return high-confidence patterns with all metadata
 func (pi *PatternInducer) InferPatterns() ([]*LearnedPattern, error) {
-	gologger.Info().Msgf("Starting pattern induction with %d passive domains", len(pi.passiveDomains))
+	gologger.Verbose().Msgf("Starting pattern induction with %d passive domains", len(pi.passiveDomains))
 
 	if len(pi.passiveDomains) == 0 {
 		gologger.Warning().Msg("No passive domains provided for pattern induction")
 		return []*LearnedPattern{}, nil
 	}
 
-	// Extract subdomains from full domains (remove root domain parts)
-	subdomains := extractSubdomains(pi.passiveDomains)
-	if len(subdomains) == 0 {
-		gologger.Warning().Msg("No valid subdomains found after filtering")
+	// Filter out wildcard domains and root-only domains
+	validDomains := filterValidDomains(pi.passiveDomains)
+	if len(validDomains) == 0 {
+		gologger.Warning().Msg("No valid domains found after filtering")
 		return []*LearnedPattern{}, nil
 	}
 
@@ -71,42 +72,55 @@ func (pi *PatternInducer) InferPatterns() ([]*LearnedPattern, error) {
 
 	orchestrator := inducer.NewOrchestrator(config)
 
-	// Learn patterns from subdomain data (root-agnostic)
-	patterns, err := orchestrator.LearnPatterns(subdomains)
+	// Load token dictionary from config for semantic classification
+	tokenDict := DefaultConfig.GetTokenDictionary()
+	if tokenDict != nil {
+		gologger.Verbose().Msgf("Using token dictionary for semantic classification (env: %d, region: %d, service: %d tokens)",
+			len(tokenDict.Env), len(tokenDict.Region), len(tokenDict.Service))
+		orchestrator.SetTokenDictionary(tokenDict)
+	} else {
+		gologger.Verbose().Msg("No token dictionary configured, using type-based classification")
+	}
+
+	// Learn patterns from FULL domains (preserves root domain for level-based grouping)
+	// The orchestrator will group domains by level count and generate patterns with {{root}}
+	patterns, err := orchestrator.LearnPatterns(validDomains)
 	if err != nil {
 		gologger.Error().Msgf("Pattern induction failed: %v", err)
 		return []*LearnedPattern{}, err
 	}
 
-	gologger.Info().Msgf("Learned %d high-quality patterns", len(patterns))
+	gologger.Verbose().Msgf("Learned %d high-quality DSL patterns", len(patterns))
 
-	// Convert learned regex patterns to AlterX DSL template format
-	converter := inducer.NewDSLConverter()
+	// Convert DSLPattern objects to LearnedPattern format
 	learnedPatterns := make([]*LearnedPattern, 0, len(patterns))
 
 	for idx, pattern := range patterns {
-		// Convert regex to DSL template
-		result := converter.Convert(pattern.Regex)
-		if result.Error != nil {
-			gologger.Warning().Msgf("Failed to convert pattern '%s': %v", pattern.Regex, result.Error)
-			continue
-		}
-
-		// Validate the conversion
-		if err := converter.ValidateTemplate(result.Template, result.Payloads); err != nil {
-			gologger.Warning().Msgf("Invalid template '%s': %v", result.Template, err)
-			continue
+		// DSLPattern already has the template - just convert to LearnedPattern format
+		// Build payloads map from DSLVariable array
+		payloads := make(map[string]interface{})
+		for _, variable := range pattern.Variables {
+			// Number variables use structured NumberRange
+			if variable.NumberRange != nil {
+				payloads[variable.Name] = variable.NumberRange
+				gologger.Verbose().Msgf("Variable %s: NumberRange{Start: %d, End: %d, Format: %s, Step: %d, Type: %s}",
+					variable.Name, variable.NumberRange.Start, variable.NumberRange.End,
+					variable.NumberRange.Format, variable.NumberRange.Step, variable.NumberRange.Type)
+			} else {
+				// Word/literal variables use string arrays
+				payloads[variable.Name] = variable.Payloads
+				gologger.Verbose().Msgf("Variable %s: %v (type: %s)", variable.Name, variable.Payloads, variable.Type)
+			}
 		}
 
 		// Create structured LearnedPattern object
 		learnedPattern := &LearnedPattern{
 			ID:         fmt.Sprintf("pattern_%03d", idx+1),
-			Template:   result.Template,
-			Regex:      pattern.Regex, // Include original regex for analysis
+			Template:   pattern.Template,
 			Coverage:   pattern.Coverage,
 			Ratio:      pattern.Ratio,
 			Confidence: pattern.Confidence,
-			Payloads:   result.Payloads,
+			Payloads:   payloads,
 		}
 
 		// Add example domains (first 3 from the pattern's domain list)
@@ -133,47 +147,48 @@ func (pi *PatternInducer) InferPatterns() ([]*LearnedPattern, error) {
 	}
 
 	if len(learnedPatterns) == 0 {
-		gologger.Warning().Msg("No valid DSL patterns after conversion")
+		gologger.Warning().Msg("No valid DSL patterns generated")
 		return []*LearnedPattern{}, nil
 	}
 
-	gologger.Info().Msgf("Successfully converted %d patterns to DSL format", len(learnedPatterns))
+	gologger.Verbose().Msgf("Successfully generated %d DSL patterns", len(learnedPatterns))
 	return learnedPatterns, nil
 }
 
-// extractSubdomains extracts only the subdomain part from full domains
-// Filters out domains with no subdomain (root-only domains)
-// Example: "api-dev.example.com" → "api-dev"
-// Example: "staging.prod.example.com" → "staging.prod"
-// Example: "example.com" → filtered out (no subdomain)
-func extractSubdomains(domains []string) []string {
-	subdomains := make([]string, 0, len(domains))
+// filterValidDomains filters out invalid domains while preserving full domain names
+// Removes:
+// - Wildcard domains (*.example.com)
+// - Root-only domains (example.com with no subdomain)
+// - Domains with invalid TLDs
+//
+// Returns FULL domains (e.g., "api-dev.example.com", "staging.prod.example.com")
+// The orchestrator needs full domains to extract root and count levels
+func filterValidDomains(domains []string) []string {
+	validDomains := make([]string, 0, len(domains))
 
 	for _, domain := range domains {
-		// Handle wildcard subdomains
-		hostname := strings.TrimPrefix(domain, "*.")
+		// Skip wildcard domains
+		if strings.HasPrefix(domain, "*.") {
+			gologger.Verbose().Msgf("Skipping wildcard domain: %s", domain)
+			continue
+		}
 
-		// Extract root domain (eTLD+1)
-		etld, err := publicsuffix.EffectiveTLDPlusOne(hostname)
+		// Extract root domain (eTLD+1) to validate structure
+		etld, err := publicsuffix.EffectiveTLDPlusOne(domain)
 		if err != nil {
 			gologger.Verbose().Msgf("Skipping domain with invalid TLD: %s", domain)
 			continue
 		}
 
-		// Extract subdomain part by removing root domain
-		if hostname == etld {
-			// No subdomain (just root domain like "example.com")
+		// Skip root-only domains (no subdomain)
+		if domain == etld {
 			gologger.Verbose().Msgf("Skipping root-only domain: %s", domain)
 			continue
 		}
 
-		// Remove root domain suffix to get subdomain
-		subdomain := strings.TrimSuffix(hostname, "."+etld)
-
-		if subdomain != "" {
-			subdomains = append(subdomains, subdomain)
-		}
+		// Keep FULL domain (with root) for level-based grouping
+		validDomains = append(validDomains, domain)
 	}
 
-	return subdomains
+	return validDomains
 }

@@ -100,7 +100,7 @@ func TestCompleteInductionPipeline(t *testing.T) {
 	config.DistHigh = 5
 	orchestrator := NewOrchestrator(config)
 
-	// Learn patterns
+	// Learn patterns (now returns DSLPattern directly)
 	patterns, err := orchestrator.LearnPatterns(domains)
 	require.NoError(t, err)
 
@@ -108,41 +108,21 @@ func TestCompleteInductionPipeline(t *testing.T) {
 		t.Skip("No patterns learned from test data")
 	}
 
-	// Convert all patterns to DSL
-	converter := NewDSLConverter()
-	dslTemplates := make([]string, 0)
-
+	// Patterns are already in DSL format - no conversion needed
 	for i, pattern := range patterns {
-		t.Logf("Pattern %d before conversion:", i+1)
-		t.Logf("  Regex: '%s' (len=%d)", pattern.Regex, len(pattern.Regex))
+		t.Logf("Pattern %d:", i+1)
+		t.Logf("  DSL Template: %s", pattern.Template)
 		t.Logf("  Coverage: %d, Ratio: %.2f, Confidence: %.2f",
 			pattern.Coverage, pattern.Ratio, pattern.Confidence)
 		t.Logf("  Domains: %v", pattern.Domains)
-
-		result := converter.Convert(pattern.Regex)
-		if result.Error != nil {
-			t.Logf("Warning: Failed to convert pattern %d: %v", i+1, result.Error)
-			continue
-		}
-
-		err := converter.ValidateTemplate(result.Template, result.Payloads)
-		if err != nil {
-			t.Logf("Warning: Invalid template %d: %v", i+1, err)
-			continue
-		}
-
-		dslTemplates = append(dslTemplates, result.Template)
-
-		t.Logf("Pattern %d:", i+1)
-		t.Logf("  Regex: %s", pattern.Regex)
-		t.Logf("  DSL: %s", result.Template)
-		t.Logf("  Coverage: %d, Ratio: %.2f, Confidence: %.2f",
-			pattern.Coverage, pattern.Ratio, pattern.Confidence)
-		if len(result.Payloads) > 0 {
-			t.Logf("  Payloads: %v", result.Payloads)
+		if len(pattern.Variables) > 0 {
+			t.Logf("  Variables:")
+			for _, v := range pattern.Variables {
+				t.Logf("    {{%s}}: %v (type: %s)", v.Name, v.Payloads, v.Type)
+			}
 		}
 	}
 
-	t.Logf("Successfully converted %d/%d patterns to DSL", len(dslTemplates), len(patterns))
-	assert.Greater(t, len(dslTemplates), 0, "Should convert at least one pattern to DSL")
+	t.Logf("Successfully generated %d DSL patterns", len(patterns))
+	assert.Greater(t, len(patterns), 0, "Should generate at least one DSL pattern")
 }

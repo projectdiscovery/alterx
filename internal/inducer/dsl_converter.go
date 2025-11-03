@@ -7,14 +7,35 @@ import (
 	"strings"
 )
 
+// ============================================================================
+// DEPRECATED: This file contains the OLD regex-to-DSL conversion approach
+//
+// Status: AWAITING DELETION - Pending induction.go integration completion
+//
+// The new architecture uses DSLGenerator which generates AlterX DSL patterns
+// directly from closures, bypassing regex entirely. This eliminates the need
+// for a two-step process (regex generation → DSL conversion).
+//
+// This file will be DELETED once:
+// 1. induction.go is updated to use DSLPattern directly (from DSLGenerator)
+// 2. No code path requires regex-to-DSL conversion
+// 3. All tests pass with the new approach
+//
+// DO NOT USE DSLConverter for new code. Use DSLGenerator instead.
+// ============================================================================
+
 // DSLConverter converts learned regex patterns to AlterX DSL template format
 // with positional variables ({{p0}}, {{p1}}, etc.)
+//
+// DEPRECATED: Use DSLGenerator instead
 type DSLConverter struct {
 	// alternationPattern matches regex alternations like (api|web|cdn)
 	alternationPattern *regexp.Regexp
 }
 
 // NewDSLConverter creates a new DSL converter
+//
+// DEPRECATED: Use NewDSLGenerator instead
 func NewDSLConverter() *DSLConverter {
 	return &DSLConverter{
 		// Match alternation groups: (value1|value2|value3)
