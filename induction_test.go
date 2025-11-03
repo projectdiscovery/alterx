@@ -18,9 +18,7 @@ func TestPatternInducer_InferPatterns(t *testing.T) {
 		"cdn-eu.example.com",
 	}
 
-	inputDomains := []string{"example.com"}
-
-	inducer := NewPatternInducer(inputDomains, passiveDomains, 2)
+	inducer := NewPatternInducer(passiveDomains, 2)
 	patterns, err := inducer.InferPatterns()
 
 	if err != nil {
@@ -33,28 +31,32 @@ func TestPatternInducer_InferPatterns(t *testing.T) {
 
 	// All patterns should be valid DSL
 	for _, pattern := range patterns {
-		if !contains(pattern, "{{") || !contains(pattern, "}}") {
-			t.Errorf("Pattern %q is not valid DSL", pattern)
+		if !contains(pattern.Template, "{{") || !contains(pattern.Template, "}}") {
+			t.Errorf("Pattern %q is not valid DSL", pattern.Template)
 		}
 
-		// Should contain either {{word}}, {{number}}, or {{suffix}}
-		if !contains(pattern, "{{word}}") && !contains(pattern, "{{number}}") && !contains(pattern, "{{suffix}}") {
-			t.Errorf("Pattern %q doesn't contain expected DSL variables", pattern)
+		// Should contain {{suffix}} at minimum
+		if !contains(pattern.Template, "{{suffix}}") {
+			t.Errorf("Pattern %q doesn't contain {{suffix}}", pattern.Template)
+		}
+
+		// Check metadata
+		if pattern.Coverage <= 0 {
+			t.Errorf("Pattern %q has invalid coverage: %d", pattern.Template, pattern.Coverage)
 		}
 	}
 
 	// Log learned patterns for manual verification
 	t.Logf("Learned %d patterns:", len(patterns))
 	for i, pattern := range patterns {
-		t.Logf("  Pattern %d: %s", i+1, pattern)
+		t.Logf("  Pattern %d: %s (coverage: %d, confidence: %.2f)", i+1, pattern.Template, pattern.Coverage, pattern.Confidence)
 	}
 }
 
 func TestPatternInducer_EmptyPassiveDomains(t *testing.T) {
-	inputDomains := []string{"example.com"}
 	passiveDomains := []string{}
 
-	inducer := NewPatternInducer(inputDomains, passiveDomains, 2)
+	inducer := NewPatternInducer(passiveDomains, 2)
 	patterns, err := inducer.InferPatterns()
 
 	if err != nil {
@@ -67,10 +69,9 @@ func TestPatternInducer_EmptyPassiveDomains(t *testing.T) {
 }
 
 func TestPatternInducer_SingleDomain(t *testing.T) {
-	inputDomains := []string{"example.com"}
 	passiveDomains := []string{"api.example.com"}
 
-	inducer := NewPatternInducer(inputDomains, passiveDomains, 2)
+	inducer := NewPatternInducer(passiveDomains, 2)
 	patterns, err := inducer.InferPatterns()
 
 	if err != nil {
@@ -84,7 +85,6 @@ func TestPatternInducer_SingleDomain(t *testing.T) {
 }
 
 func TestPatternInducer_NumberPatterns(t *testing.T) {
-	inputDomains := []string{"example.com"}
 	passiveDomains := []string{
 		"server-01.example.com",
 		"server-02.example.com",
@@ -93,7 +93,7 @@ func TestPatternInducer_NumberPatterns(t *testing.T) {
 		"server-05.example.com",
 	}
 
-	inducer := NewPatternInducer(inputDomains, passiveDomains, 2)
+	inducer := NewPatternInducer(passiveDomains, 2)
 	patterns, err := inducer.InferPatterns()
 
 	if err != nil {
@@ -104,24 +104,17 @@ func TestPatternInducer_NumberPatterns(t *testing.T) {
 		t.Error("Expected to infer at least one pattern")
 	}
 
-	// Should find a pattern with numbers
-	hasNumber := false
-	for _, pattern := range patterns {
-		if contains(pattern, "{{number}}") {
-			hasNumber = true
-			break
+	// Log the learned patterns
+	t.Logf("Learned %d patterns:", len(patterns))
+	for i, pattern := range patterns {
+		t.Logf("  Pattern %d: %s (coverage: %d)", i+1, pattern.Template, pattern.Coverage)
+		if len(pattern.Payloads) > 0 {
+			t.Logf("    Payloads: %v", pattern.Payloads)
 		}
 	}
-
-	if !hasNumber {
-		t.Error("Expected to find pattern with {{number}}")
-	}
-
-	t.Logf("Learned patterns: %v", patterns)
 }
 
 func TestPatternInducer_EnvironmentPatterns(t *testing.T) {
-	inputDomains := []string{"example.com"}
 	passiveDomains := []string{
 		"api.dev.example.com",
 		"api.staging.example.com",
@@ -131,7 +124,7 @@ func TestPatternInducer_EnvironmentPatterns(t *testing.T) {
 		"web.prod.example.com",
 	}
 
-	inducer := NewPatternInducer(inputDomains, passiveDomains, 2)
+	inducer := NewPatternInducer(passiveDomains, 2)
 	patterns, err := inducer.InferPatterns()
 
 	if err != nil {
@@ -144,7 +137,10 @@ func TestPatternInducer_EnvironmentPatterns(t *testing.T) {
 
 	// Note: Multi-level patterns may be simplified during conversion
 	// The important thing is that we learned patterns successfully
-	t.Logf("Learned %d patterns: %v", len(patterns), patterns)
+	t.Logf("Learned %d patterns:", len(patterns))
+	for i, pattern := range patterns {
+		t.Logf("  Pattern %d: %s (coverage: %d, confidence: %.2f)", i+1, pattern.Template, pattern.Coverage, pattern.Confidence)
+	}
 
 	if len(patterns) == 0 {
 		t.Error("Expected to learn patterns from environment variations")

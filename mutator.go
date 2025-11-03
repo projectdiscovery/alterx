@@ -77,34 +77,50 @@ func New(opts *Options) (*Mutator, error) {
 			opts.Patterns = DefaultConfig.Patterns
 		case "inferred":
 			// Use only inferred patterns from input subdomain analysis
-			inducer := NewPatternInducer(opts.Domains, opts.Domains, 2)
-			inferredPatterns, err := inducer.InferPatterns()
+			// Pattern learning is root-agnostic (learns subdomain structures)
+			inducer := NewPatternInducer(opts.Domains, 2)
+			learnedPatterns, err := inducer.InferPatterns()
 			if err != nil {
 				gologger.Warning().Msgf("Pattern induction failed: %v. Falling back to default patterns.", err)
 				opts.Patterns = DefaultConfig.Patterns
-			} else if len(inferredPatterns) == 0 {
-				gologger.Warning().Msg("No patterns inferred from input. Falling back to default patterns.")
-				opts.Patterns = DefaultConfig.Patterns
 			} else {
-				opts.Patterns = inferredPatterns
+				// Extract template strings from learned patterns
+				templates := make([]string, 0, len(learnedPatterns))
+				for _, p := range learnedPatterns {
+					templates = append(templates, p.Template)
+				}
+				if len(templates) == 0 {
+					gologger.Warning().Msg("No patterns inferred from input. Falling back to default patterns.")
+					opts.Patterns = DefaultConfig.Patterns
+				} else {
+					opts.Patterns = templates
+				}
 			}
 		case "both", "":
 			// Use both default and inferred patterns
-			inducer := NewPatternInducer(opts.Domains, opts.Domains, 2)
-			inferredPatterns, err := inducer.InferPatterns()
+			// Pattern learning is root-agnostic (learns subdomain structures)
+			inducer := NewPatternInducer(opts.Domains, 2)
+			learnedPatterns, err := inducer.InferPatterns()
 			if err != nil {
 				gologger.Warning().Msgf("Pattern induction failed: %v. Using only default patterns.", err)
 				opts.Patterns = DefaultConfig.Patterns
-			} else if len(inferredPatterns) == 0 {
-				gologger.Verbose().Msg("No patterns inferred. Using only default patterns.")
-				opts.Patterns = DefaultConfig.Patterns
 			} else {
-				// Merge inferred patterns with default patterns
-				opts.Patterns = append(inferredPatterns, DefaultConfig.Patterns...)
-				// Dedupe to remove any overlapping patterns
-				opts.Patterns = sliceutil.Dedupe(opts.Patterns)
-				gologger.Verbose().Msgf("Using %d patterns (%d inferred + %d default)",
-					len(opts.Patterns), len(inferredPatterns), len(DefaultConfig.Patterns))
+				// Extract template strings from learned patterns
+				templates := make([]string, 0, len(learnedPatterns))
+				for _, p := range learnedPatterns {
+					templates = append(templates, p.Template)
+				}
+				if len(templates) == 0 {
+					gologger.Verbose().Msg("No patterns inferred. Using only default patterns.")
+					opts.Patterns = DefaultConfig.Patterns
+				} else {
+					// Merge inferred patterns with default patterns
+					opts.Patterns = append(templates, DefaultConfig.Patterns...)
+					// Dedupe to remove any overlapping patterns
+					opts.Patterns = sliceutil.Dedupe(opts.Patterns)
+					gologger.Verbose().Msgf("Using %d patterns (%d inferred + %d default)",
+						len(opts.Patterns), len(templates), len(DefaultConfig.Patterns))
+				}
 			}
 		default:
 			// Fallback to default patterns
@@ -180,7 +196,9 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 	if Writer == nil {
 		return errorutil.NewWithTag("alterx", "writer destination cannot be nil")
 	}
-	resChan := m.Execute(context.TODO())
+	// Use background context since this is a public API without context parameter
+	// to maintain backward compatibility
+	resChan := m.Execute(context.Background())
 	m.payloadCount = 0
 	maxFileSize := m.Options.MaxSize
 	for {

@@ -6,7 +6,7 @@ import (
 )
 
 func TestPatternGenerator_GeneratePattern(t *testing.T) {
-	pg := NewPatternGenerator("example.com")
+	pg := NewPatternGenerator()
 
 	tests := []struct {
 		name     string
@@ -89,7 +89,7 @@ func TestPatternGenerator_GeneratePattern(t *testing.T) {
 }
 
 func TestPatternGenerator_MultiLevel(t *testing.T) {
-	pg := NewPatternGenerator("example.com")
+	pg := NewPatternGenerator()
 
 	domains := []string{
 		"api.staging.example.com",
@@ -119,7 +119,7 @@ func TestPatternGenerator_MultiLevel(t *testing.T) {
 }
 
 func TestPatternGenerator_OptionalLevel(t *testing.T) {
-	pg := NewPatternGenerator("example.com")
+	pg := NewPatternGenerator()
 
 	domains := []string{
 		"api.staging.example.com",
@@ -166,7 +166,7 @@ func TestEscapeRegex(t *testing.T) {
 }
 
 func TestPatternGenerator_GeneratePatternsFromClosures(t *testing.T) {
-	pg := NewPatternGenerator("example.com")
+	pg := NewPatternGenerator()
 
 	closures := []*Closure{
 		{
@@ -210,7 +210,7 @@ func TestPatternGenerator_GeneratePatternsFromClosures(t *testing.T) {
 }
 
 func TestPatternGenerator_BuildLevelPositionMap(t *testing.T) {
-	pg := NewPatternGenerator("example.com")
+	pg := NewPatternGenerator()
 
 	tokenized := []*TokenizedDomain{
 		{
@@ -256,7 +256,7 @@ func TestPatternGenerator_BuildLevelPositionMap(t *testing.T) {
 }
 
 func TestPatternGenerator_IsLevelOptional(t *testing.T) {
-	pg := NewPatternGenerator("example.com")
+	pg := NewPatternGenerator()
 
 	tokenized := []*TokenizedDomain{
 		{
@@ -285,7 +285,7 @@ func TestPatternGenerator_IsLevelOptional(t *testing.T) {
 }
 
 func BenchmarkPatternGenerator_GeneratePattern(b *testing.B) {
-	pg := NewPatternGenerator("example.com")
+	pg := NewPatternGenerator()
 
 	domains := make([]string, 10)
 	for i := 0; i < 10; i++ {

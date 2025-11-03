@@ -15,11 +15,15 @@ var (
 	numberRegex = regexp.MustCompile(`([0-9]+)`)
 )
 
-// Tokenize parses a full domain into a structured TokenizedDomain
+// Tokenize parses a domain or subdomain string into a structured TokenizedDomain
 // Following the regulator algorithm:
-// 1. Extract subdomain part (remove root domain using publicsuffix)
+// 1. Extract subdomain part (remove root domain using publicsuffix, if full domain)
 // 2. Split subdomain by dots → levels
 // 3. For each level: tokenize by dashes and numbers
+//
+// Accepts two input formats:
+// - Full domain: "api-dev-01.staging.example.com" → extracts "api-dev-01.staging"
+// - Subdomain only: "api-dev-01.staging" → uses as-is
 //
 // Example:
 //   Input: "api-dev-01.staging.example.com"
@@ -27,32 +31,40 @@ var (
 //     - Level 0: ["api", "-dev", "-01"]
 //     - Level 1: ["staging"]
 func Tokenize(domain string) (*TokenizedDomain, error) {
-	// Parse URL to get hostname
-	URL, err := urlutil.Parse(domain)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse domain %s: %w", domain, err)
-	}
-
-	hostname := URL.Hostname()
-
-	// Handle wildcard subdomains
-	if strings.Contains(hostname, "*") {
-		if strings.HasPrefix(hostname, "*.") {
-			hostname = strings.TrimPrefix(hostname, "*.")
+	// Handle wildcard subdomains first (before URL parsing)
+	input := domain
+	if strings.Contains(input, "*") {
+		if strings.HasPrefix(input, "*.") {
+			input = strings.TrimPrefix(input, "*.")
 		} else {
 			// Wildcard in middle (e.g., "prod.*.example.com") - invalid
 			return nil, fmt.Errorf("invalid wildcard in domain %s", domain)
 		}
 	}
 
-	// Extract subdomain and root domain
-	subdomain, root, err := extractSubdomain(hostname)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract subdomain from %s: %w", hostname, err)
+	// Try to parse as URL to get hostname (handles http://api.example.com)
+	// If parsing fails or hostname is empty, treat the input as a plain hostname/subdomain
+	var hostname string
+	URL, err := urlutil.Parse(input)
+	if err == nil && URL.Hostname() != "" {
+		hostname = URL.Hostname()
+	} else {
+		// Input is not a valid URL or has no hostname (e.g., "api-dev" or "api.staging")
+		// Treat it as a plain hostname/subdomain string
+		hostname = input
 	}
 
-	// If no subdomain (just root domain), return empty tokenized domain
-	if subdomain == "" {
+	// Try to extract subdomain and root domain
+	subdomain, root, err := extractSubdomain(hostname)
+	if err != nil {
+		// If extraction fails, assume input is already a subdomain-only string
+		// This happens when passing preprocessed subdomains (e.g., "api-dev-01")
+		subdomain = hostname
+		root = "" // No root domain
+	} else if subdomain == "" {
+		// extractSubdomain succeeded but returned empty subdomain
+		// This means the hostname is just a root domain (e.g., "example.com")
+		// Return empty tokenized domain
 		return &TokenizedDomain{
 			Original:  domain,
 			Subdomain: "",

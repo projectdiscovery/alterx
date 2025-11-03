@@ -2,6 +2,7 @@ package inducer
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 )
@@ -17,15 +18,12 @@ type Pattern struct {
 
 // PatternGenerator converts closures into regex patterns
 // Implements the closure_to_regex algorithm from regulator
-type PatternGenerator struct {
-	rootDomain string // The root domain (e.g., "example.com")
-}
+// Patterns are root-agnostic (only represent subdomain structure)
+type PatternGenerator struct{}
 
 // NewPatternGenerator creates a new pattern generator
-func NewPatternGenerator(rootDomain string) *PatternGenerator {
-	return &PatternGenerator{
-		rootDomain: rootDomain,
-	}
+func NewPatternGenerator() *PatternGenerator {
+	return &PatternGenerator{}
 }
 
 // GeneratePattern converts a closure into a regex pattern
@@ -60,16 +58,19 @@ func (pg *PatternGenerator) GeneratePattern(closure *Closure) (*Pattern, error) 
 	// Step 3: Generate regex from level map
 	regex := pg.generateRegexFromLevelMap(levelMap, tokenized)
 
-	// Step 4: Add root domain
-	if pg.rootDomain != "" {
-		regex = regex + "." + pg.rootDomain
-	}
+	// Pattern is root-agnostic (no root domain appended)
+	// DSL converter will add {{suffix}} placeholder later
+
+	// Calculate confidence using the formula from config_format.md
+	// confidence = (0.85 * ratio_score) + (0.15 * coverage_score)
+	// where ratio_score = 1.0 / ratio and coverage_score = min(1.0, log10(coverage) / 3.0)
+	confidence := calculateConfidence(len(closure.Domains), 0)
 
 	pattern := &Pattern{
 		Regex:      regex,
 		Coverage:   len(closure.Domains),
 		Domains:    closure.Domains,
-		Confidence: 1.0, // TODO: Implement quality scoring
+		Confidence: confidence,
 	}
 
 	return pattern, nil
@@ -266,4 +267,67 @@ func (pg *PatternGenerator) GeneratePatternsFromClosures(closures []*Closure) []
 	}
 
 	return patterns
+}
+
+// calculateConfidence implements the confidence scoring formula from config_format.md
+//
+// Formula:
+//   confidence = (0.85 * ratio_score) + (0.15 * coverage_score)
+//   where:
+//     ratio_score = 1.0 / ratio (ratio = possible_generations / observed_count)
+//     coverage_score = min(1.0, log10(coverage) / 3.0)
+//
+// Parameters:
+//   coverage: Number of domains this pattern covers
+//   ratio: Generation ratio (possible_generations / observed_count)
+//          If ratio is 0, it's calculated later and confidence is based on coverage only
+//
+// Returns:
+//   Confidence score between 0.0 and 1.0 (higher is better)
+//
+// Interpretation:
+//   - 0.84 → 84% of generated subdomains will be valid (excellent)
+//   - 0.53 → 53% of generated subdomains will be valid (moderate)
+//   - 0.36 → 36% of generated subdomains will be valid (low quality)
+func calculateConfidence(coverage int, ratio float64) float64 {
+	// Handle edge cases
+	if coverage <= 0 {
+		return 0.0
+	}
+
+	// Calculate coverage score (15% weight, logarithmic scale)
+	// log10(coverage) / 3.0 gives:
+	//   coverage = 10   → log10(10) / 3   = 0.33
+	//   coverage = 100  → log10(100) / 3  = 0.67
+	//   coverage = 1000 → log10(1000) / 3 = 1.00
+	coverageScore := math.Min(1.0, math.Log10(float64(coverage))/3.0)
+
+	// Calculate ratio score (85% weight)
+	// ratio_score = 1.0 / ratio
+	// If ratio is 0 or not yet calculated, use conservative estimate
+	var ratioScore float64
+	if ratio > 0 {
+		ratioScore = 1.0 / ratio
+	} else {
+		// No ratio provided - assume perfect ratio (1.0)
+		ratioScore = 1.0
+	}
+
+	// Clamp ratioScore to [0, 1] range
+	ratioScore = math.Min(1.0, math.Max(0.0, ratioScore))
+
+	// Final confidence: weighted average
+	confidence := (0.85 * ratioScore) + (0.15 * coverageScore)
+
+	// Ensure confidence is in [0, 1] range
+	return math.Min(1.0, math.Max(0.0, confidence))
+}
+
+// UpdateConfidence recalculates confidence after ratio is determined
+// This should be called after the pattern's Ratio field is set by quality filtering
+func (p *Pattern) UpdateConfidence() {
+	if p == nil {
+		return
+	}
+	p.Confidence = calculateConfidence(p.Coverage, p.Ratio)
 }

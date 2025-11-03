@@ -51,46 +51,10 @@ type TokenizedDomain struct {
 	Levels    []Level // Parsed levels in order (0-indexed internally)
 }
 
-// GetLevelCount returns the number of levels in this tokenized domain
-func (td *TokenizedDomain) GetLevelCount() int {
-	return len(td.Levels)
-}
-
-// GetLevel returns the level at the specified index (0-indexed)
-// Returns nil if the index is out of bounds
-func (td *TokenizedDomain) GetLevel(index int) *Level {
-	if index < 0 || index >= len(td.Levels) {
-		return nil
-	}
-	return &td.Levels[index]
-}
-
-// GetTokensAtLevel returns all tokens at the specified level index (0-indexed)
-// Returns nil if the level doesn't exist
-func (td *TokenizedDomain) GetTokensAtLevel(levelIndex int) []Token {
-	level := td.GetLevel(levelIndex)
-	if level == nil {
-		return nil
-	}
-	return level.Tokens
-}
-
-// GetToken returns a specific token at level and position (both 0-indexed)
-// Returns nil if either index is out of bounds
-func (td *TokenizedDomain) GetToken(levelIndex, position int) *Token {
-	tokens := td.GetTokensAtLevel(levelIndex)
-	if tokens == nil || position < 0 || position >= len(tokens) {
-		return nil
-	}
-	return &tokens[position]
-}
-
-// InducerStats provides summary statistics about the pattern inducer
-type InducerStats struct {
-	TotalDomains     int            // Total number of input domains
-	TokenizedDomains int            // Successfully tokenized domains
-	FailedDomains    int            // Failed to tokenize (invalid format, etc.)
-	MaxLevels        int            // Maximum number of levels seen
-	LevelCounts      map[int]int    // Distribution: level_count → domain_count
-	TokenTypeStats   map[TokenType]int // Token type distribution
+// Closure represents a group of similar domains based on edit distance
+// This is the core data structure for pattern generation in regulator algorithm
+type Closure struct {
+	Domains []string // The domains in this closure
+	Delta   int      // The edit distance threshold used
+	Size    int      // Number of domains
 }

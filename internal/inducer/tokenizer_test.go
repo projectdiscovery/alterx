@@ -139,7 +139,7 @@ func TestTokenize(t *testing.T) {
 
 			// Check level 0 tokens
 			if tt.wantLevels > 0 && len(tt.wantLevel0) > 0 {
-				level0 := result.GetLevel(0)
+				level0 := &result.Levels[0]
 				if level0 == nil {
 					t.Fatal("Level 0 is nil")
 				}
@@ -160,7 +160,7 @@ func TestTokenize(t *testing.T) {
 
 			// Check level 1 tokens (if applicable)
 			if tt.wantLevels > 1 && len(tt.wantLevel1) > 0 {
-				level1 := result.GetLevel(1)
+				level1 := &result.Levels[1]
 				if level1 == nil {
 					t.Fatal("Level 1 is nil")
 				}

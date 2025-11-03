@@ -26,7 +26,8 @@ type Options struct {
 	DisableUpdateCheck bool
 	Verbose            bool
 	Silent             bool
-	Enrich             bool
+	Enrich             bool   // Original: enrich word payloads from input
+	Analyze            bool   // New: analyze patterns and output config
 	Mode               string // Pattern mode: both, inferred, default
 	Limit              int
 	MaxSize            int
@@ -58,7 +59,8 @@ func ParseFlags() *Options {
 	flagSet.CreateGroup("config", "Config",
 		flagSet.StringVar(&opts.Config, "config", "", `alterx cli config file (default '$HOME/.config/alterx/config.yaml')`),
 		flagSet.BoolVarP(&opts.Enrich, "enrich", "en", false, "enrich wordlist by extracting words from input"),
-		flagSet.StringVarP(&opts.Mode, "mode", "m", "both", "wordlist generation mode: both, inferred, default"),
+		flagSet.BoolVarP(&opts.Analyze, "analyze", "an", false, "analyze input domains, learn patterns, and output to config file (red team recon mode)"),
+		flagSet.StringVarP(&opts.Mode, "mode", "m", "default", "wordlist generation mode: default, inferred, both (default: default)"),
 		flagSet.StringVar(&opts.PermutationConfig, "ac", "", fmt.Sprintf(`alterx permutation config file (default '$HOME/.config/alterx/permutation_%v.yaml')`, version)),
 		flagSet.IntVar(&opts.Limit, "limit", 0, "limit the number of results to return (default 0)"),
 	)
