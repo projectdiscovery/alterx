@@ -5,7 +5,7 @@
 *.so
 *.dylib
 cmd/alterx/alterx
-dist
+dist/
 bin/
 .idea
 .vscode
@@ -19,3 +19,25 @@ bin/
 # Dependency directories (remove the comment below to include it)
 # vendor/
 /alterx
+
+# Backup files
+*.bak
+*.backup
+*.swp
+*.swo
+*~
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pattern induction outputs
+learned_patterns.yaml
+learned_patterns*.yaml
+
+# Temporary documentation
+REFACTOR_COMPLETE.md
+CLEANUP_STATUS.md
+STEP3_SUMMARY.md
+LEVEL_BASED_GROUPING.md
