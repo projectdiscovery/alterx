@@ -118,7 +118,8 @@ func (o *Orchestrator) LearnPatterns(domains []string) ([]*DSLPattern, error) {
 		len(allPatterns), len(selected), o.calculateCoverage(selected, filtered)*100)
 
 	// STEP 10: Enrichment
-	enriched := o.enrichPatterns(selected)
+	enricher := NewEnricher(o.modeConfig.EnrichmentRate)
+	enriched := enricher.EnrichPatterns(selected)
 	gologger.Verbose().Msgf("[Step 10] Enriched %d patterns with optional variables", len(enriched))
 
 	return enriched, nil
@@ -700,43 +701,8 @@ func (o *Orchestrator) selectPatternsByEntropy(patterns []*DSLPattern, allDomain
 }
 
 // enrichPatterns adds optional variable support
-func (o *Orchestrator) enrichPatterns(patterns []*DSLPattern) []*DSLPattern {
-	enriched := make([]*DSLPattern, len(patterns))
-	copy(enriched, patterns)
-
-	for _, pattern := range enriched {
-		for i := range pattern.Variables {
-			variable := &pattern.Variables[i]
-
-			// Numbers ALWAYS optional
-			if variable.NumberRange != nil {
-				variable.Payloads = []string{""}
-				continue
-			}
-
-			// Semantic modifiers optional based on enrichment rate
-			if o.isSemanticVariable(variable.Name) {
-				if rand.Float64() < o.modeConfig.EnrichmentRate {
-					// Add empty string as first payload
-					variable.Payloads = append([]string{""}, variable.Payloads...)
-				}
-			}
-		}
-	}
-
-	return enriched
-}
 
 // isSemanticVariable checks if variable is semantic
-func (o *Orchestrator) isSemanticVariable(name string) bool {
-	semanticNames := []string{"env", "region", "service", "stage", "tier"}
-	for _, s := range semanticNames {
-		if name == s {
-			return true
-		}
-	}
-	return false
-}
 
 // calculateCoverage calculates coverage ratio
 func (o *Orchestrator) calculateCoverage(patterns []*DSLPattern, allDomains []string) float64 {
