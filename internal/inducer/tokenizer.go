@@ -26,10 +26,11 @@ var (
 // - Subdomain only: "api-dev-01.staging" → uses as-is
 //
 // Example:
-//   Input: "api-dev-01.staging.example.com"
-//   Output: TokenizedDomain with:
-//     - Level 0: ["api", "-dev", "-01"]
-//     - Level 1: ["staging"]
+//
+//	Input: "api-dev-01.staging.example.com"
+//	Output: TokenizedDomain with:
+//	  - Level 0: ["api", "-dev", "-01"]
+//	  - Level 1: ["staging"]
 func Tokenize(domain string) (*TokenizedDomain, error) {
 	// Handle wildcard subdomains first (before URL parsing)
 	input := domain
@@ -98,9 +99,10 @@ func Tokenize(domain string) (*TokenizedDomain, error) {
 // Uses golang.org/x/net/publicsuffix for accurate eTLD detection
 //
 // Examples:
-//   "api.example.com" → subdomain="api", root="example.com"
-//   "api.staging.example.com" → subdomain="api.staging", root="example.com"
-//   "example.com" → subdomain="", root="example.com"
+//
+//	"api.example.com" → subdomain="api", root="example.com"
+//	"api.staging.example.com" → subdomain="api.staging", root="example.com"
+//	"example.com" → subdomain="", root="example.com"
 func extractSubdomain(hostname string) (subdomain string, root string, error error) {
 	// Get the root domain (eTLD+1) using publicsuffix
 	rootDomain, err := publicsuffix.EffectiveTLDPlusOne(hostname)
@@ -123,9 +125,10 @@ func extractSubdomain(hostname string) (subdomain string, root string, error err
 // Levels are ordered left-to-right (leftmost = level 0)
 //
 // Examples:
-//   "api" → ["api"]
-//   "api.staging" → ["api", "staging"]
-//   "api.v1.staging" → ["api", "v1", "staging"]
+//
+//	"api" → ["api"]
+//	"api.staging" → ["api", "staging"]
+//	"api.v1.staging" → ["api", "v1", "staging"]
 func splitIntoLevels(subdomain string) []string {
 	if subdomain == "" {
 		return []string{}
@@ -141,10 +144,11 @@ func splitIntoLevels(subdomain string) []string {
 // 4. Preserve hyphenated numbers: "-01" stays as "-01"
 //
 // Examples:
-//   "api" → [Token{Value:"api", Type:Word}]
-//   "api-dev" → [Token{Value:"api", Type:Word}, Token{Value:"-dev", Type:Dash}]
-//   "api-dev-01" → [Token{Value:"api", Type:Word}, Token{Value:"-dev", Type:Dash}, Token{Value:"-01", Type:Dash}]
-//   "api01" → [Token{Value:"api", Type:Word}, Token{Value:"01", Type:Number}]
+//
+//	"api" → [Token{Value:"api", Type:Word}]
+//	"api-dev" → [Token{Value:"api", Type:Word}, Token{Value:"-dev", Type:Dash}]
+//	"api-dev-01" → [Token{Value:"api", Type:Word}, Token{Value:"-dev", Type:Dash}, Token{Value:"-01", Type:Dash}]
+//	"api01" → [Token{Value:"api", Type:Word}, Token{Value:"01", Type:Number}]
 func tokenizeLevel(level string) []Token {
 	if level == "" {
 		return []Token{}
@@ -208,10 +212,11 @@ func tokenizeLevel(level string) []Token {
 // Preserves the numbers as separate tokens
 //
 // Examples:
-//   "api" → ["api"]
-//   "api01" → ["api", "01"]
-//   "server123test" → ["server", "123", "test"]
-//   "01" → ["01"]
+//
+//	"api" → ["api"]
+//	"api01" → ["api", "01"]
+//	"server123test" → ["server", "123", "test"]
+//	"01" → ["01"]
 func splitByNumbers(token string) []string {
 	if token == "" {
 		return []string{}

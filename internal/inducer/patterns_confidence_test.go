@@ -82,14 +82,14 @@ func TestCalculateConfidence(t *testing.T) {
 			name:           "very large coverage",
 			coverage:       10000,
 			ratio:          1.5,
-			wantConfidence: (0.85 * 1.0/1.5) + (0.15 * 1.0), // Coverage maxes at 1.0
+			wantConfidence: (0.85 * 1.0 / 1.5) + (0.15 * 1.0), // Coverage maxes at 1.0
 			tolerance:      0.01,
 		},
 		{
 			name:           "small coverage",
 			coverage:       5,
 			ratio:          2.0,
-			wantConfidence: (0.85 * 0.5) + (0.15 * math.Log10(5)/3.0),
+			wantConfidence: (0.85 * 0.5) + (0.15 * math.Log10(5) / 3.0),
 			tolerance:      0.01,
 		},
 	}
@@ -117,10 +117,10 @@ func TestCalculateConfidence_Formula(t *testing.T) {
 			coverage      int
 			expectedScore float64
 		}{
-			{coverage: 10, expectedScore: 0.33},    // log10(10)/3 = 1/3
-			{coverage: 100, expectedScore: 0.67},   // log10(100)/3 = 2/3
-			{coverage: 1000, expectedScore: 1.0},   // log10(1000)/3 = 1, capped at 1.0
-			{coverage: 10000, expectedScore: 1.0},  // log10(10000)/3 > 1, capped at 1.0
+			{coverage: 10, expectedScore: 0.33},   // log10(10)/3 = 1/3
+			{coverage: 100, expectedScore: 0.67},  // log10(100)/3 = 2/3
+			{coverage: 1000, expectedScore: 1.0},  // log10(1000)/3 = 1, capped at 1.0
+			{coverage: 10000, expectedScore: 1.0}, // log10(10000)/3 > 1, capped at 1.0
 		}
 
 		for _, tt := range tests {
@@ -135,11 +135,11 @@ func TestCalculateConfidence_Formula(t *testing.T) {
 			ratio         float64
 			expectedScore float64
 		}{
-			{ratio: 1.0, expectedScore: 1.0},   // 1/1 = 1.0
-			{ratio: 1.2, expectedScore: 0.83},  // 1/1.2 ≈ 0.83
-			{ratio: 2.0, expectedScore: 0.5},   // 1/2 = 0.5
-			{ratio: 3.2, expectedScore: 0.31},  // 1/3.2 ≈ 0.31
-			{ratio: 10.0, expectedScore: 0.1},  // 1/10 = 0.1
+			{ratio: 1.0, expectedScore: 1.0},  // 1/1 = 1.0
+			{ratio: 1.2, expectedScore: 0.83}, // 1/1.2 ≈ 0.83
+			{ratio: 2.0, expectedScore: 0.5},  // 1/2 = 0.5
+			{ratio: 3.2, expectedScore: 0.31}, // 1/3.2 ≈ 0.31
+			{ratio: 10.0, expectedScore: 0.1}, // 1/10 = 0.1
 		}
 
 		for _, tt := range tests {
@@ -200,7 +200,7 @@ func TestPattern_UpdateConfidence(t *testing.T) {
 				Ratio:      5.0,
 				Confidence: 0.0,
 			},
-			wantConfidence: (0.85 * 0.2) + (0.15 * math.Log10(50)/3.0),
+			wantConfidence: (0.85 * 0.2) + (0.15 * math.Log10(50) / 3.0),
 			tolerance:      0.01,
 		},
 	}

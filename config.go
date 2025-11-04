@@ -20,18 +20,15 @@ var DefaultConfig Config
 
 // TokenDictionaryConfig represents the YAML structure for token_dictionary
 type TokenDictionaryConfig struct {
-	Env          map[string]interface{} `yaml:"env"`
-	Region       map[string]interface{} `yaml:"region"`
-	Service      map[string]interface{} `yaml:"service"`
-	Version      map[string]interface{} `yaml:"version"`
-	Visibility   map[string]interface{} `yaml:"visibility"`
-	DatabaseType map[string]interface{} `yaml:"database_type"`
+	Env     map[string]interface{} `yaml:"env"`
+	Region  map[string]interface{} `yaml:"region"`
+	Service map[string]interface{} `yaml:"service"`
 }
 
 type Config struct {
-	Patterns              []string               `yaml:"patterns"`
-	Payloads              map[string][]string    `yaml:"payloads"`
-	TokenDictionaryConfig *TokenDictionaryConfig `yaml:"token_dictionary,omitempty"`
+	Patterns              []string                 `yaml:"patterns"`
+	Payloads              map[string][]string      `yaml:"payloads"`
+	TokenDictionaryConfig *TokenDictionaryConfig   `yaml:"token_dictionary,omitempty"`
 	tokenDictionary       *inducer.TokenDictionary // Parsed dictionary for internal use
 }
 

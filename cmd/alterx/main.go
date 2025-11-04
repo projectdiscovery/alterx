@@ -173,11 +173,16 @@ func handleAnalyzeMode(opts *runner.Options) {
 		if err := os.WriteFile(opts.Output, fullData, 0644); err != nil {
 			gologger.Fatal().Msgf("Failed to write patterns to %s: %v", opts.Output, err)
 		}
-		absPath, _ := filepath.Abs(opts.Output)
-		gologger.Info().Msgf("Patterns written to: %s", absPath)
+		if absPath, err := filepath.Abs(opts.Output); err == nil {
+			gologger.Info().Msgf("Patterns written to: %s", absPath)
+		} else {
+			gologger.Info().Msgf("Patterns written to: %s", opts.Output)
+		}
 	} else {
 		// Output to stdout (default behavior)
-		os.Stdout.Write(fullData)
+		if _, err := os.Stdout.Write(fullData); err != nil {
+			gologger.Error().Msgf("Failed to write patterns to stdout: %v", err)
+		}
 	}
 
 	// Calculate estimated permutations for the learned patterns
@@ -192,14 +197,16 @@ func handleAnalyzeMode(opts *runner.Options) {
 	alterOpts := alterx.Options{
 		Domains:         opts.Domains,
 		Payloads:        make(map[string][]string),
-		Patterns:        templates,        // Use already-learned patterns
-		LearnedPatterns: learnedPatterns,  // Pass learned patterns directly to avoid re-learning
-		Mode:            "default",        // Don't trigger re-learning
+		Patterns:        templates,       // Use already-learned patterns
+		LearnedPatterns: learnedPatterns, // Pass learned patterns directly to avoid re-learning
+		Mode:            "default",       // Don't trigger re-learning
 	}
 
 	// Create mutator to estimate permutations
 	if m, err := alterx.New(&alterOpts); err == nil {
 		estimatedPermutations = m.EstimateCount()
+	} else {
+		gologger.Warning().Msgf("Failed to estimate permutations: %v", err)
 	}
 
 	// Print comprehensive summary to stderr (after YAML output)
@@ -207,28 +214,3 @@ func handleAnalyzeMode(opts *runner.Options) {
 		len(opts.Domains), len(learnedPatterns), totalCoverage, avgConfidence, estimatedPermutations)
 }
 
-// learnPatternsFromDomains learns patterns from domains and returns DSL template strings
-func learnPatternsFromDomains(domains []string) []string {
-	if len(domains) < 2 {
-		gologger.Verbose().Msg("Not enough domains for pattern learning (minimum: 2)")
-		return []string{}
-	}
-
-	// Pattern learning is root-agnostic (learns subdomain structures)
-	gologger.Verbose().Msgf("Learning patterns from %d subdomains", len(domains))
-
-	inducer := alterx.NewPatternInducer(domains, 2)
-	learnedPatterns, err := inducer.InferPatterns()
-	if err != nil {
-		gologger.Warning().Msgf("Pattern learning failed: %v", err)
-		return []string{}
-	}
-
-	// Extract just the template strings for runtime pattern generation
-	templates := make([]string, 0, len(learnedPatterns))
-	for _, p := range learnedPatterns {
-		templates = append(templates, p.Template)
-	}
-
-	return templates
-}

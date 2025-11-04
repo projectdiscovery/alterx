@@ -12,10 +12,10 @@ func TestDSLGenerator_NumberRangeCompression(t *testing.T) {
 	gen := NewDSLGenerator(nil)
 
 	tests := []struct {
-		name           string
-		domains        []string
-		expectedRange  string // Expected range in format "XX-YY"
-		expectedInTemplate bool // Should template contain {{number}}
+		name               string
+		domains            []string
+		expectedRange      string // Expected range in format "XX-YY"
+		expectedInTemplate bool   // Should template contain {{number}}
 	}{
 		{
 			name: "sequential numbers with leading zeros",
@@ -24,7 +24,7 @@ func TestDSLGenerator_NumberRangeCompression(t *testing.T) {
 				"api-dev-02.example.com",
 				"api-dev-03.example.com",
 			},
-			expectedRange: "00-04", // min(01)-1=0, max(03)+1=04 (with leading zeros)
+			expectedRange:      "00-04", // min(01)-1=0, max(03)+1=04 (with leading zeros)
 			expectedInTemplate: true,
 		},
 		{
@@ -34,7 +34,7 @@ func TestDSLGenerator_NumberRangeCompression(t *testing.T) {
 				"web6.example.com",
 				"web7.example.com",
 			},
-			expectedRange: "4-8", // min(5)-1=4, max(7)+1=8
+			expectedRange:      "4-8", // min(5)-1=4, max(7)+1=8
 			expectedInTemplate: true,
 		},
 		{
@@ -44,7 +44,7 @@ func TestDSLGenerator_NumberRangeCompression(t *testing.T) {
 				"db-101.example.com",
 				"db-102.example.com",
 			},
-			expectedRange: "99-103", // min(100)-1=99, max(102)+1=103
+			expectedRange:      "99-103", // min(100)-1=99, max(102)+1=103
 			expectedInTemplate: true,
 		},
 		{
@@ -54,7 +54,7 @@ func TestDSLGenerator_NumberRangeCompression(t *testing.T) {
 				"app09.example.com",
 				"app10.example.com",
 			},
-			expectedRange: "07-11", // min(08)-1=07, max(10)+1=11 (keeps leading zero format)
+			expectedRange:      "07-11", // min(08)-1=07, max(10)+1=11 (keeps leading zero format)
 			expectedInTemplate: true,
 		},
 	}
@@ -162,45 +162,45 @@ func TestDSLGenerator_CompressNumberRange(t *testing.T) {
 	gen := NewDSLGenerator(nil)
 
 	tests := []struct {
-		name         string
-		input        []string
-		expectedStart int
-		expectedEnd   int
+		name           string
+		input          []string
+		expectedStart  int
+		expectedEnd    int
 		expectedFormat string
 	}{
 		{
-			name:          "leading zeros preserved",
-			input:         []string{"01", "02", "03"},
-			expectedStart: 0,
-			expectedEnd:   4,
+			name:           "leading zeros preserved",
+			input:          []string{"01", "02", "03"},
+			expectedStart:  0,
+			expectedEnd:    4,
 			expectedFormat: "%02d",
 		},
 		{
-			name:          "no leading zeros",
-			input:         []string{"5", "6", "7"},
-			expectedStart: 4,
-			expectedEnd:   8,
+			name:           "no leading zeros",
+			input:          []string{"5", "6", "7"},
+			expectedStart:  4,
+			expectedEnd:    8,
 			expectedFormat: "%d",
 		},
 		{
-			name:          "large numbers",
-			input:         []string{"100", "101", "102"},
-			expectedStart: 99,
-			expectedEnd:   103,
+			name:           "large numbers",
+			input:          []string{"100", "101", "102"},
+			expectedStart:  99,
+			expectedEnd:    103,
 			expectedFormat: "%d",
 		},
 		{
-			name:          "single number",
-			input:         []string{"42"},
-			expectedStart: 41,
-			expectedEnd:   43,
+			name:           "single number",
+			input:          []string{"42"},
+			expectedStart:  41,
+			expectedEnd:    43,
 			expectedFormat: "%d",
 		},
 		{
-			name:          "mixed digits (takes max digit count)",
-			input:         []string{"08", "09", "10"},
-			expectedStart: 7,
-			expectedEnd:   11,
+			name:           "mixed digits (takes max digit count)",
+			input:          []string{"08", "09", "10"},
+			expectedStart:  7,
+			expectedEnd:    11,
 			expectedFormat: "%02d",
 		},
 	}

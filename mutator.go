@@ -13,7 +13,7 @@ import (
 	"github.com/projectdiscovery/fasttemplate"
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/utils/dedupe"
-	errorutil "github.com/projectdiscovery/utils/errors"
+	"github.com/projectdiscovery/utils/errkit"
 	sliceutil "github.com/projectdiscovery/utils/slice"
 )
 
@@ -51,8 +51,8 @@ type Options struct {
 type Mutator struct {
 	Options         *Options
 	payloadCount    int
-	Inputs          []*Input           // all processed inputs
-	LearnedPatterns []*LearnedPattern  // learned patterns with their specific payloads
+	Inputs          []*Input          // all processed inputs
+	LearnedPatterns []*LearnedPattern // learned patterns with their specific payloads
 	timeTaken       time.Duration
 	// internal or unexported variables
 	maxkeyLenInBytes int
@@ -214,7 +214,7 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 // ExecuteWithWriter executes Mutator and writes results directly to type that implements io.Writer interface
 func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 	if Writer == nil {
-		return errorutil.NewWithTag("alterx", "writer destination cannot be nil")
+		return errkit.New("writer destination cannot be nil")
 	}
 	// Use background context since this is a public API without context parameter
 	// to maintain backward compatibility
@@ -418,14 +418,6 @@ func (m *Mutator) Time() string {
 	return fmt.Sprintf("%.4fs", m.timeTaken.Seconds())
 }
 
-// getKeys returns keys of a map as a slice
-func getKeys(m map[string][]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
-}
 
 // isValidSubdomain checks if a generated subdomain is valid
 // Filters out malformed combinations from omit functionality
@@ -437,9 +429,9 @@ func isValidSubdomain(value string) bool {
 
 	// Filter consecutive delimiters
 	if strings.Contains(value, "--") || strings.Contains(value, "__") ||
-	   strings.Contains(value, "-.") || strings.Contains(value, "._") ||
-	   strings.Contains(value, "-_") || strings.Contains(value, "_-") ||
-	   strings.Contains(value, "..") {
+		strings.Contains(value, "-.") || strings.Contains(value, "._") ||
+		strings.Contains(value, "-_") || strings.Contains(value, "_-") ||
+		strings.Contains(value, "..") {
 		return false
 	}
 

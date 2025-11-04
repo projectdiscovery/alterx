@@ -1,6 +1,7 @@
 package inducer
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -156,7 +157,7 @@ func TestNumberCompressor_IsSequential(t *testing.T) {
 		{[]int{1, 2, 3, 4, 5}, true},
 		{[]int{10, 11, 12}, true},
 		{[]int{1, 3, 5}, false},
-		{[]int{1}, false}, // Single number
+		{[]int{1}, false},       // Single number
 		{[]int{5, 4, 3}, false}, // Wrong order
 	}
 
@@ -184,7 +185,7 @@ func TestNumberCompressor_CompressPattern(t *testing.T) {
 	}
 
 	// Should contain range notation
-	if !contains(pattern.Regex, "[") || !contains(pattern.Regex, "]") {
+	if !strings.Contains(pattern.Regex, "[") || !strings.Contains(pattern.Regex, "]") {
 		t.Errorf("Compressed pattern %q doesn't contain range notation", pattern.Regex)
 	}
 }
@@ -198,11 +199,11 @@ func TestNumberCompressor_ComplexPattern(t *testing.T) {
 	compressed := nc.Compress(pattern)
 
 	// Should compress the number group but leave text groups alone
-	if !contains(compressed, "dev") || !contains(compressed, "prod") {
+	if !strings.Contains(compressed, "dev") || !strings.Contains(compressed, "prod") {
 		t.Error("Text alternation was incorrectly modified")
 	}
 
-	if !contains(compressed, "us") || !contains(compressed, "eu") {
+	if !strings.Contains(compressed, "us") || !strings.Contains(compressed, "eu") {
 		t.Error("Region alternation was incorrectly modified")
 	}
 
@@ -212,21 +213,6 @@ func TestNumberCompressor_ComplexPattern(t *testing.T) {
 	}
 }
 
-// Helper function
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-		findSubstring(s, substr)))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
 
 func BenchmarkNumberCompressor_Compress(b *testing.B) {
 	nc := NewNumberCompressor()

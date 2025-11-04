@@ -203,10 +203,10 @@ func (t *Trie) GetTokenGroupDomains() map[string][]string {
 
 // Stats returns statistics about the trie structure
 type TrieStats struct {
-	TotalDomains int            // Number of domains in trie
-	TotalNodes   int            // Number of trie nodes
-	MaxDepth     int            // Maximum depth of trie
-	PrefixGroups map[int]int    // N-gram size → number of groups
+	TotalDomains int         // Number of domains in trie
+	TotalNodes   int         // Number of trie nodes
+	MaxDepth     int         // Maximum depth of trie
+	PrefixGroups map[int]int // N-gram size → number of groups
 }
 
 // GetStats returns statistics about the trie

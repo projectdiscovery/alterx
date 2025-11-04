@@ -2,6 +2,7 @@ package inducer
 
 import (
 	"math"
+	"sort"
 
 	"github.com/projectdiscovery/gologger"
 )
@@ -277,7 +278,7 @@ func calculateMedianSimilarity(similarity [][]float64) float64 {
 	}
 
 	// Sort to find median
-	sortFloat64s(values)
+	sort.Float64s(values)
 
 	mid := len(values) / 2
 	if len(values)%2 == 0 {
@@ -286,15 +287,3 @@ func calculateMedianSimilarity(similarity [][]float64) float64 {
 	return values[mid]
 }
 
-// sortFloat64s is a simple bubble sort for float64 slices
-// (Go's sort.Float64s can't be used since we need full control)
-func sortFloat64s(arr []float64) {
-	n := len(arr)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			if arr[j] > arr[j+1] {
-				arr[j], arr[j+1] = arr[j+1], arr[j]
-			}
-		}
-	}
-}

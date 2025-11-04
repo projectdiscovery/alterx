@@ -46,9 +46,9 @@ func NewDSLConverter() *DSLConverter {
 
 // ConversionResult holds the output of DSL conversion
 type ConversionResult struct {
-	Template string                      // DSL template with positional variables
-	Payloads map[string][]string         // Inline payloads for positional variables
-	Error    error                       // Any conversion errors
+	Template string              // DSL template with positional variables
+	Payloads map[string][]string // Inline payloads for positional variables
+	Error    error               // Any conversion errors
 }
 
 // Convert transforms a regex pattern into AlterX DSL format
@@ -61,9 +61,10 @@ type ConversionResult struct {
 // 5. Append .{{suffix}} to the end
 //
 // Example:
-//   Input:  "(api|web|cdn)-(dev|prod)"
-//   Output: Template: "{{p0}}-{{p1}}.{{suffix}}"
-//           Payloads: {p0: [api, web, cdn], p1: [dev, prod]}
+//
+//	Input:  "(api|web|cdn)-(dev|prod)"
+//	Output: Template: "{{p0}}-{{p1}}.{{suffix}}"
+//	        Payloads: {p0: [api, web, cdn], p1: [dev, prod]}
 //
 // Edge cases:
 //   - Escaped characters: \. \- etc. → unescaped in template
@@ -125,12 +126,8 @@ func (dc *DSLConverter) Convert(regexPattern string) *ConversionResult {
 			// Remove leading/trailing parentheses from nested groups
 			// Loop to handle deeply nested groups like (((api)))
 			for strings.HasPrefix(cleaned, "(") || strings.HasSuffix(cleaned, ")") {
-				if strings.HasPrefix(cleaned, "(") {
-					cleaned = strings.TrimPrefix(cleaned, "(")
-				}
-				if strings.HasSuffix(cleaned, ")") {
-					cleaned = strings.TrimSuffix(cleaned, ")")
-				}
+				cleaned = strings.TrimPrefix(cleaned, "(")
+				cleaned = strings.TrimSuffix(cleaned, ")")
 				cleaned = strings.TrimSpace(cleaned)
 			}
 
@@ -286,7 +283,7 @@ func (dc *DSLConverter) ConvertPattern(pattern *Pattern) (*Pattern, error) {
 
 	// Create new pattern with DSL template
 	converted := &Pattern{
-		Regex:      pattern.Regex,      // Keep original regex
+		Regex:      pattern.Regex, // Keep original regex
 		Coverage:   pattern.Coverage,
 		Domains:    pattern.Domains,
 		Ratio:      pattern.Ratio,

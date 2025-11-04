@@ -193,8 +193,8 @@ func TestPatternInducer_SemanticClassification(t *testing.T) {
 
 		// Check if pattern uses semantic variable names
 		if contains(pattern.Template, "{{service}}") ||
-		   contains(pattern.Template, "{{env}}") ||
-		   contains(pattern.Template, "{{region}}") {
+			contains(pattern.Template, "{{env}}") ||
+			contains(pattern.Template, "{{region}}") {
 			hasSemanticVariables = true
 			t.Logf("    ✓ Uses semantic classification")
 		}

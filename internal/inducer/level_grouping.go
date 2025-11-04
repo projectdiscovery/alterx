@@ -12,9 +12,10 @@ import (
 // This naturally separates domains by their hierarchical level count
 //
 // Example:
-//   Domains with 2 levels: ["scheduler.api.projectdiscovery.io", "webhook.dev.projectdiscovery.io"]
-//   LevelCount: 2
-//   Root: "projectdiscovery.io"
+//
+//	Domains with 2 levels: ["scheduler.api.projectdiscovery.io", "webhook.dev.projectdiscovery.io"]
+//	LevelCount: 2
+//	Root: "projectdiscovery.io"
 type LevelGroup struct {
 	LevelCount int      // Number of subdomain levels (1, 2, 3, ...)
 	Root       string   // Root domain (eTLD+1)
@@ -25,16 +26,17 @@ type LevelGroup struct {
 // This excludes the root domain (eTLD+1) itself
 //
 // Algorithm:
-//   1. Extract root domain using publicsuffix
-//   2. Remove root domain from full domain
-//   3. Count dots in remaining subdomain part
-//   4. Level count = dots + 1 (if subdomain exists)
+//  1. Extract root domain using publicsuffix
+//  2. Remove root domain from full domain
+//  3. Count dots in remaining subdomain part
+//  4. Level count = dots + 1 (if subdomain exists)
 //
 // Examples:
-//   "api.projectdiscovery.io" → 1 level (subdomain: "api")
-//   "scheduler.api.projectdiscovery.io" → 2 levels (subdomain: "scheduler.api")
-//   "scheduler.v1.api.projectdiscovery.io" → 3 levels (subdomain: "scheduler.v1.api")
-//   "projectdiscovery.io" → 0 levels (no subdomain)
+//
+//	"api.projectdiscovery.io" → 1 level (subdomain: "api")
+//	"scheduler.api.projectdiscovery.io" → 2 levels (subdomain: "scheduler.api")
+//	"scheduler.v1.api.projectdiscovery.io" → 3 levels (subdomain: "scheduler.v1.api")
+//	"projectdiscovery.io" → 0 levels (no subdomain)
 //
 // Returns:
 //   - levelCount: Number of subdomain levels
@@ -87,22 +89,23 @@ func CountLevels(domain string) (levelCount int, root string, error error) {
 //   - 3-level domains: {{p0}}.{{p1}}.{{p2}}.{{root}}
 //
 // Algorithm:
-//   1. Count levels for each domain
-//   2. Group domains with same level count
-//   3. Store root domain for each group
+//  1. Count levels for each domain
+//  2. Group domains with same level count
+//  3. Store root domain for each group
 //
 // Examples:
-//   Input: [
-//     "api.projectdiscovery.io",           // 1 level
-//     "cdn.projectdiscovery.io",           // 1 level
-//     "scheduler.api.projectdiscovery.io", // 2 levels
-//     "webhook.dev.projectdiscovery.io",   // 2 levels
-//   ]
 //
-//   Output: {
-//     1: LevelGroup{LevelCount: 1, Domains: ["api.projectdiscovery.io", "cdn.projectdiscovery.io"]},
-//     2: LevelGroup{LevelCount: 2, Domains: ["scheduler.api.projectdiscovery.io", "webhook.dev.projectdiscovery.io"]},
-//   }
+//	Input: [
+//	  "api.projectdiscovery.io",           // 1 level
+//	  "cdn.projectdiscovery.io",           // 1 level
+//	  "scheduler.api.projectdiscovery.io", // 2 levels
+//	  "webhook.dev.projectdiscovery.io",   // 2 levels
+//	]
+//
+//	Output: {
+//	  1: LevelGroup{LevelCount: 1, Domains: ["api.projectdiscovery.io", "cdn.projectdiscovery.io"]},
+//	  2: LevelGroup{LevelCount: 2, Domains: ["scheduler.api.projectdiscovery.io", "webhook.dev.projectdiscovery.io"]},
+//	}
 //
 // Returns:
 //   - map[levelCount]*LevelGroup
@@ -147,9 +150,9 @@ func GroupByLevelCount(domains []string) (map[int]*LevelGroup, error) {
 // This ensures we process simpler patterns before complex ones
 //
 // Example order:
-//   1. 1-level domains ({{p0}}.{{root}})
-//   2. 2-level domains ({{p0}}.{{p1}}.{{root}})
-//   3. 3-level domains ({{p0}}.{{p1}}.{{p2}}.{{root}})
+//  1. 1-level domains ({{p0}}.{{root}})
+//  2. 2-level domains ({{p0}}.{{p1}}.{{root}})
+//  3. 3-level domains ({{p0}}.{{p1}}.{{p2}}.{{root}})
 func GetSortedLevelGroups(groups map[int]*LevelGroup) []*LevelGroup {
 	sorted := make([]*LevelGroup, 0, len(groups))
 	for _, group := range groups {

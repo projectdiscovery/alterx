@@ -6,112 +6,112 @@ import (
 
 func TestTokenize(t *testing.T) {
 	tests := []struct {
-		name        string
-		input       string
+		name          string
+		input         string
 		wantSubdomain string
-		wantRoot    string
-		wantLevels  int
-		wantLevel0  []string // Expected token values at level 0
-		wantLevel1  []string // Expected token values at level 1 (if exists)
+		wantRoot      string
+		wantLevels    int
+		wantLevel0    []string // Expected token values at level 0
+		wantLevel1    []string // Expected token values at level 1 (if exists)
 	}{
 		{
-			name:        "simple single-level subdomain",
-			input:       "api.example.com",
+			name:          "simple single-level subdomain",
+			input:         "api.example.com",
 			wantSubdomain: "api",
-			wantRoot:    "example.com",
-			wantLevels:  1,
-			wantLevel0:  []string{"api"},
+			wantRoot:      "example.com",
+			wantLevels:    1,
+			wantLevel0:    []string{"api"},
 		},
 		{
-			name:        "dash-separated subdomain",
-			input:       "api-dev.example.com",
+			name:          "dash-separated subdomain",
+			input:         "api-dev.example.com",
 			wantSubdomain: "api-dev",
-			wantRoot:    "example.com",
-			wantLevels:  1,
-			wantLevel0:  []string{"api", "-dev"},
+			wantRoot:      "example.com",
+			wantLevels:    1,
+			wantLevel0:    []string{"api", "-dev"},
 		},
 		{
-			name:        "three-part dash-separated",
-			input:       "api-dev-01.example.com",
+			name:          "three-part dash-separated",
+			input:         "api-dev-01.example.com",
 			wantSubdomain: "api-dev-01",
-			wantRoot:    "example.com",
-			wantLevels:  1,
-			wantLevel0:  []string{"api", "-dev", "-01"},
+			wantRoot:      "example.com",
+			wantLevels:    1,
+			wantLevel0:    []string{"api", "-dev", "-01"},
 		},
 		{
-			name:        "multi-level subdomain",
-			input:       "api.staging.example.com",
+			name:          "multi-level subdomain",
+			input:         "api.staging.example.com",
 			wantSubdomain: "api.staging",
-			wantRoot:    "example.com",
-			wantLevels:  2,
-			wantLevel0:  []string{"api"},
-			wantLevel1:  []string{"staging"},
+			wantRoot:      "example.com",
+			wantLevels:    2,
+			wantLevel0:    []string{"api"},
+			wantLevel1:    []string{"staging"},
 		},
 		{
-			name:        "three-level subdomain",
-			input:       "api.v1.staging.example.com",
+			name:          "three-level subdomain",
+			input:         "api.v1.staging.example.com",
 			wantSubdomain: "api.v1.staging",
-			wantRoot:    "example.com",
-			wantLevels:  3,
-			wantLevel0:  []string{"api"},
-			wantLevel1:  []string{"v", "1"}, // v1 is split into "v" and "1" per regulator algorithm
+			wantRoot:      "example.com",
+			wantLevels:    3,
+			wantLevel0:    []string{"api"},
+			wantLevel1:    []string{"v", "1"}, // v1 is split into "v" and "1" per regulator algorithm
 		},
 		{
-			name:        "number in token (not separated by dash)",
-			input:       "api01.example.com",
+			name:          "number in token (not separated by dash)",
+			input:         "api01.example.com",
 			wantSubdomain: "api01",
-			wantRoot:    "example.com",
-			wantLevels:  1,
-			wantLevel0:  []string{"api", "01"},
+			wantRoot:      "example.com",
+			wantLevels:    1,
+			wantLevel0:    []string{"api", "01"},
 		},
 		{
-			name:        "complex multi-level with dashes and numbers",
-			input:       "web-us-east-1.prod.internal.example.com",
+			name:          "complex multi-level with dashes and numbers",
+			input:         "web-us-east-1.prod.internal.example.com",
 			wantSubdomain: "web-us-east-1.prod.internal",
-			wantRoot:    "example.com",
-			wantLevels:  3,
-			wantLevel0:  []string{"web", "-us", "-east", "-1"},
-			wantLevel1:  []string{"prod"},
+			wantRoot:      "example.com",
+			wantLevels:    3,
+			wantLevel0:    []string{"web", "-us", "-east", "-1"},
+			wantLevel1:    []string{"prod"},
 		},
 		{
-			name:        "db with number (no dash)",
-			input:       "db01.prod.example.com",
+			name:          "db with number (no dash)",
+			input:         "db01.prod.example.com",
 			wantSubdomain: "db01.prod",
-			wantRoot:    "example.com",
-			wantLevels:  2,
-			wantLevel0:  []string{"db", "01"},
-			wantLevel1:  []string{"prod"},
+			wantRoot:      "example.com",
+			wantLevels:    2,
+			wantLevel0:    []string{"db", "01"},
+			wantLevel1:    []string{"prod"},
 		},
 		{
-			name:        "single level subdomain",
-			input:       "cdn.example.com",
+			name:          "single level subdomain",
+			input:         "cdn.example.com",
 			wantSubdomain: "cdn",
-			wantRoot:    "example.com",
-			wantLevels:  1,
-			wantLevel0:  []string{"cdn"},
+			wantRoot:      "example.com",
+			wantLevels:    1,
+			wantLevel0:    []string{"cdn"},
 		},
 		{
-			name:        "mixed numbers and text",
-			input:       "api123test.example.com",
+			name:          "mixed numbers and text",
+			input:         "api123test.example.com",
 			wantSubdomain: "api123test",
-			wantRoot:    "example.com",
-			wantLevels:  1,
-			wantLevel0:  []string{"api", "123", "test"},
+			wantRoot:      "example.com",
+			wantLevels:    1,
+			wantLevel0:    []string{"api", "123", "test"},
 		},
 		{
-			name:        "public suffix with multiple parts (co.uk)",
-			input:       "api.example.co.uk",
+			name:          "public suffix with multiple parts (co.uk)",
+			input:         "api.example.co.uk",
 			wantSubdomain: "api",
-			wantRoot:    "example.co.uk",
-			wantLevels:  1,
-			wantLevel0:  []string{"api"},
+			wantRoot:      "example.co.uk",
+			wantLevels:    1,
+			wantLevel0:    []string{"api"},
 		},
 		{
-			name:        "wildcard subdomain",
-			input:       "*.example.com",
+			name:          "wildcard subdomain",
+			input:         "*.example.com",
 			wantSubdomain: "",
-			wantRoot:    "example.com",
-			wantLevels:  0,
+			wantRoot:      "example.com",
+			wantLevels:    0,
 		},
 	}
 
@@ -266,11 +266,11 @@ func TestTokenizeLevel(t *testing.T) {
 
 func TestExtractSubdomain(t *testing.T) {
 	tests := []struct {
-		name           string
-		hostname       string
-		wantSubdomain  string
-		wantRoot       string
-		wantErr        bool
+		name          string
+		hostname      string
+		wantSubdomain string
+		wantRoot      string
+		wantErr       bool
 	}{
 		{
 			name:          "simple subdomain",

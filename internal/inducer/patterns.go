@@ -26,10 +26,10 @@ import (
 
 // Pattern represents a learned regex pattern
 type Pattern struct {
-	Regex     string   // The generated regex pattern
-	Coverage  int      // Number of domains this pattern covers
-	Domains   []string // The actual domains used to generate this pattern
-	Ratio     float64  // Generation ratio (for quality filtering)
+	Regex      string   // The generated regex pattern
+	Coverage   int      // Number of domains this pattern covers
+	Domains    []string // The actual domains used to generate this pattern
+	Ratio      float64  // Generation ratio (for quality filtering)
 	Confidence float64  // Quality score (0-1)
 }
 
@@ -293,18 +293,21 @@ func (pg *PatternGenerator) GeneratePatternsFromClosures(closures []*Closure) []
 // calculateConfidence implements the confidence scoring formula from config_format.md
 //
 // Formula:
-//   confidence = (0.85 * ratio_score) + (0.15 * coverage_score)
-//   where:
-//     ratio_score = 1.0 / ratio (ratio = possible_generations / observed_count)
-//     coverage_score = min(1.0, log10(coverage) / 3.0)
+//
+//	confidence = (0.85 * ratio_score) + (0.15 * coverage_score)
+//	where:
+//	  ratio_score = 1.0 / ratio (ratio = possible_generations / observed_count)
+//	  coverage_score = min(1.0, log10(coverage) / 3.0)
 //
 // Parameters:
-//   coverage: Number of domains this pattern covers
-//   ratio: Generation ratio (possible_generations / observed_count)
-//          If ratio is 0, it's calculated later and confidence is based on coverage only
+//
+//	coverage: Number of domains this pattern covers
+//	ratio: Generation ratio (possible_generations / observed_count)
+//	       If ratio is 0, it's calculated later and confidence is based on coverage only
 //
 // Returns:
-//   Confidence score between 0.0 and 1.0 (higher is better)
+//
+//	Confidence score between 0.0 and 1.0 (higher is better)
 //
 // Interpretation:
 //   - 0.84 → 84% of generated subdomains will be valid (excellent)

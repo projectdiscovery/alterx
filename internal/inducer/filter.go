@@ -13,13 +13,14 @@ import (
 // 1. Sort patterns by coverage (descending)
 // 2. For each pattern, check if it's subsumed by any already-kept pattern
 // 3. A pattern A is subsumed by pattern B if:
-//    - B's domains are a superset of A's domains (all of A's domains are in B)
-//    - B has higher or equal coverage than A
+//   - B's domains are a superset of A's domains (all of A's domains are in B)
+//   - B has higher or equal coverage than A
 //
 // Example:
-//   Pattern A: (api|asn) - coverage: 2, domains: [api, asn]
-//   Pattern B: (api|asn|cdn) - coverage: 3, domains: [api, asn, cdn]
-//   → Pattern A is subsumed by Pattern B (removed)
+//
+//	Pattern A: (api|asn) - coverage: 2, domains: [api, asn]
+//	Pattern B: (api|asn|cdn) - coverage: 3, domains: [api, asn, cdn]
+//	→ Pattern A is subsumed by Pattern B (removed)
 func FilterSubsumedPatterns(patterns []*Pattern) []*Pattern {
 	if len(patterns) <= 1 {
 		return patterns
@@ -106,9 +107,10 @@ func patternSubsumes(broader, narrower *Pattern) bool {
 // patterns that differ by only a few services.
 //
 // Example:
-//   Pattern A: (api|asn)
-//   Pattern B: (api|cdn)
-//   Similarity: 0.5 (1 common service out of 3 unique services)
+//
+//	Pattern A: (api|asn)
+//	Pattern B: (api|cdn)
+//	Similarity: 0.5 (1 common service out of 3 unique services)
 func PatternSimilarity(p1, p2 *Pattern) float64 {
 	// Build sets of domains
 	set1 := make(map[string]bool)
@@ -224,13 +226,15 @@ func dslPatternSubsumes(broader, narrower *DSLPattern) bool {
 //
 // Rejection criteria (ADAPTIVE based on dataset size):
 // 1. Graduated ratio threshold based on coverage
-//    - High coverage (50+ domains): Accept ratio ≤ 100
-//    - Medium coverage (10-50): Accept ratio ≤ 60
-//    - Low coverage (< 10): Accept ratio ≤ 40
+//   - High coverage (50+ domains): Accept ratio ≤ 100
+//   - Medium coverage (10-50): Accept ratio ≤ 60
+//   - Low coverage (< 10): Accept ratio ≤ 40
+//
 // 2. Adaptive confidence threshold (dataset-size dependent)
-//    - Small datasets (<50): 0.30 minimum (prioritize quality)
-//    - Mid datasets (50-200): 0.15 minimum (balanced)
-//    - Large datasets (200+): 0.10 minimum (prioritize discovery)
+//   - Small datasets (<50): 0.30 minimum (prioritize quality)
+//   - Mid datasets (50-200): 0.15 minimum (balanced)
+//   - Large datasets (200+): 0.10 minimum (prioritize discovery)
+//
 // 3. Single-char tokens: ALLOWED (many valid cases like "d" for d1, d2, d3)
 func FilterLowQualityTokens(patterns []*DSLPattern, minConfidence float64, maxRatio float64, datasetSize int) []*DSLPattern {
 	filtered := []*DSLPattern{}

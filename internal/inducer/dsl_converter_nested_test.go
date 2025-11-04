@@ -15,14 +15,14 @@ func TestConvertNestedOptionalGroups(t *testing.T) {
 	converter := NewDSLConverter()
 
 	tests := []struct {
-		name           string
-		regex          string
+		name             string
+		regex            string
 		expectedTemplate string
 		expectedPayloads map[string][]string
 	}{
 		{
-			name:  "nested optional with two alternations",
-			regex: "((api|web)(-dev|-prod))?",
+			name:             "nested optional with two alternations",
+			regex:            "((api|web)(-dev|-prod))?",
 			expectedTemplate: "{{p0}}{{p1}}.{{suffix}}",
 			expectedPayloads: map[string][]string{
 				"p0": {"api", "web"},
@@ -30,16 +30,16 @@ func TestConvertNestedOptionalGroups(t *testing.T) {
 			},
 		},
 		{
-			name:  "nested optional with literal between",
-			regex: "((neo|scheduler|webhook)-dev)?",
+			name:             "nested optional with literal between",
+			regex:            "((neo|scheduler|webhook)-dev)?",
 			expectedTemplate: "{{p0}}-dev.{{suffix}}",
 			expectedPayloads: map[string][]string{
 				"p0": {"neo", "scheduler", "webhook"},
 			},
 		},
 		{
-			name:  "complex nested optional - projectdiscovery case",
-			regex: "((api|apollo|asn|auth)(-api|-data|-dev|-prod|1))?",
+			name:             "complex nested optional - projectdiscovery case",
+			regex:            "((api|apollo|asn|auth)(-api|-data|-dev|-prod|1))?",
 			expectedTemplate: "{{p0}}{{p1}}.{{suffix}}",
 			expectedPayloads: map[string][]string{
 				"p0": {"api", "apollo", "asn", "auth"},
@@ -47,16 +47,16 @@ func TestConvertNestedOptionalGroups(t *testing.T) {
 			},
 		},
 		{
-			name:  "simple alternation without nesting",
-			regex: "(api|web|cdn)",
+			name:             "simple alternation without nesting",
+			regex:            "(api|web|cdn)",
 			expectedTemplate: "{{p0}}.{{suffix}}",
 			expectedPayloads: map[string][]string{
 				"p0": {"api", "cdn", "web"},
 			},
 		},
 		{
-			name:  "two alternations without optional",
-			regex: "(api|web)(-dev|-prod)",
+			name:             "two alternations without optional",
+			regex:            "(api|web)(-dev|-prod)",
 			expectedTemplate: "{{p0}}{{p1}}.{{suffix}}",
 			expectedPayloads: map[string][]string{
 				"p0": {"api", "web"},
@@ -64,8 +64,8 @@ func TestConvertNestedOptionalGroups(t *testing.T) {
 			},
 		},
 		{
-			name:  "single optional group",
-			regex: "(api|web)?",
+			name:             "single optional group",
+			regex:            "(api|web)?",
 			expectedTemplate: "{{p0}}.{{suffix}}",
 			expectedPayloads: map[string][]string{
 				"p0": {"api", "web"},
@@ -162,23 +162,23 @@ func TestPayloadCleaning(t *testing.T) {
 	converter := NewDSLConverter()
 
 	tests := []struct {
-		name             string
-		regex            string
+		name                string
+		regex               string
 		expectCleanPayloads bool
 	}{
 		{
-			name:  "nested groups with leading paren",
-			regex: "((api|apollo|asn)(-dev|-prod))?",
+			name:                "nested groups with leading paren",
+			regex:               "((api|apollo|asn)(-dev|-prod))?",
 			expectCleanPayloads: true,
 		},
 		{
-			name:  "nested groups with trailing paren",
-			regex: "((neo|scheduler|webhook)-dev)?",
+			name:                "nested groups with trailing paren",
+			regex:               "((neo|scheduler|webhook)-dev)?",
 			expectCleanPayloads: true,
 		},
 		{
-			name:  "deeply nested groups",
-			regex: "(((api|web|cdn)))",
+			name:                "deeply nested groups",
+			regex:               "(((api|web|cdn)))",
 			expectCleanPayloads: true,
 		},
 	}
@@ -273,27 +273,27 @@ func TestDSLConversionRegression(t *testing.T) {
 	// These are the actual regex patterns from the projectdiscovery.io analysis
 	// that were producing incorrect templates
 	buggyPatterns := []struct {
-		regex            string
+		regex               string
 		expectNoStrayParens bool
 	}{
 		{
-			regex:            "((api|apollo|asn|auth|blog|careers|cdn|chaos|clerk|cloud|dast|defcon|dns|docs|feedback|log|login|loki|mcp|neo|nexus|nuclei|outreach|pdtm|policies|security|status|webhook|www)(-api|-data|-dev|-prod|1))?",
+			regex:               "((api|apollo|asn|auth|blog|careers|cdn|chaos|clerk|cloud|dast|defcon|dns|docs|feedback|log|login|loki|mcp|neo|nexus|nuclei|outreach|pdtm|policies|security|status|webhook|www)(-api|-data|-dev|-prod|1))?",
 			expectNoStrayParens: true,
 		},
 		{
-			regex:            "((api|apollo|asn|auth|blog|careers|cdn|chaos|clerk|cloud|dast|defcon|dns|docs|feedback|log|login|loki|mcp|neo|nexus|nuclei|outreach|pdtm|policies|security|status|www)(-api|-data|-dev|-prod|1))?",
+			regex:               "((api|apollo|asn|auth|blog|careers|cdn|chaos|clerk|cloud|dast|defcon|dns|docs|feedback|log|login|loki|mcp|neo|nexus|nuclei|outreach|pdtm|policies|security|status|www)(-api|-data|-dev|-prod|1))?",
 			expectNoStrayParens: true,
 		},
 		{
-			regex:            "((api|apollo|asn|auth|careers|cdn|chaos|cloud|dast|defcon|dns|docs|loki|mcp|neo|nuclei|pdtm|policies|status|www)(-api|-data|-dev|-prod|1))?",
+			regex:               "((api|apollo|asn|auth|careers|cdn|chaos|cloud|dast|defcon|dns|docs|loki|mcp|neo|nuclei|pdtm|policies|status|www)(-api|-data|-dev|-prod|1))?",
 			expectNoStrayParens: true,
 		},
 		{
-			regex:            "((api|careers|chaos|clerk|feedback|mcp|nuclei|outreach|scheduler|security|webhook|www)(-api|-data|-dev))?",
+			regex:               "((api|careers|chaos|clerk|feedback|mcp|nuclei|outreach|scheduler|security|webhook|www)(-api|-data|-dev))?",
 			expectNoStrayParens: true,
 		},
 		{
-			regex:            "((neo|scheduler|webhook)-dev)?",
+			regex:               "((neo|scheduler|webhook)-dev)?",
 			expectNoStrayParens: true,
 		},
 	}

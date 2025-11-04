@@ -42,7 +42,7 @@ func TestPatternGenerator_GeneratePattern(t *testing.T) {
 			wantErr: true, // Should fail for single domain
 		},
 		{
-			name: "Empty closure",
+			name:    "Empty closure",
 			domains: []string{},
 			wantErr: true,
 		},

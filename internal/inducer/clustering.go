@@ -199,7 +199,7 @@ func mergeExemplar(patterns []*DSLPattern) *DSLPattern {
 
 	// Recalculate quality metrics based on new coverage
 	merged.Ratio = estimateRatio(merged)
-	merged.Confidence = 1.0 / (1.0 + merged.Ratio)
+	merged.Confidence = calculateConfidence(merged.Coverage, merged.Ratio)
 
 	return merged
 }
@@ -252,7 +252,7 @@ func mergeUnionAggressive(patterns []*DSLPattern) *DSLPattern {
 
 	// Recalculate quality metrics
 	merged.Ratio = estimateRatio(merged)
-	merged.Confidence = 1.0 / (1.0 + merged.Ratio)
+	merged.Confidence = calculateConfidence(merged.Coverage, merged.Ratio)
 
 	return merged
 }

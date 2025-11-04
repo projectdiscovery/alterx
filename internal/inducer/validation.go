@@ -18,7 +18,7 @@ type ClusterValidationMetrics struct {
 
 // String returns a formatted summary of validation metrics
 func (m ClusterValidationMetrics) String() string {
-	quality := "unknown"
+	var quality string
 	if m.Silhouette > 0.70 {
 		quality = "strong"
 	} else if m.Silhouette > 0.50 {
@@ -93,17 +93,19 @@ func countSingletons(clusters []Cluster) int {
 // CalculateSilhouette computes the Silhouette Coefficient
 //
 // For each pattern i:
-//   a(i) = average distance to patterns in same cluster
-//   b(i) = average distance to patterns in nearest different cluster
-//   s(i) = (b(i) - a(i)) / max(a(i), b(i))
+//
+//	a(i) = average distance to patterns in same cluster
+//	b(i) = average distance to patterns in nearest different cluster
+//	s(i) = (b(i) - a(i)) / max(a(i), b(i))
 //
 // Overall silhouette = average of s(i) for all patterns
 //
 // Interpretation:
-//   > 0.70: Strong clustering (tight, well-separated)
-//   > 0.50: Reasonable clustering
-//   > 0.25: Weak clustering
-//   < 0:    Wrong clustering (patterns closer to other clusters)
+//
+//	> 0.70: Strong clustering (tight, well-separated)
+//	> 0.50: Reasonable clustering
+//	> 0.25: Weak clustering
+//	< 0:    Wrong clustering (patterns closer to other clusters)
 func CalculateSilhouette(patterns []*DSLPattern, assignments []int, distFunc func(p1, p2 *DSLPattern) float64) float64 {
 	n := len(patterns)
 	if n <= 1 {
@@ -221,9 +223,10 @@ func avgNearestClusterDistance(i int, myClusterID int, clusters []Cluster, patte
 // Lower values indicate better clustering (< 1.0 is good)
 //
 // Formula:
-//   DB = (1/k) * sum_{i=1}^k max_{j≠i} { (s_i + s_j) / d(c_i, c_j) }
-//   where s_i = avg distance within cluster i
-//         d(c_i, c_j) = distance between cluster centroids
+//
+//	DB = (1/k) * sum_{i=1}^k max_{j≠i} { (s_i + s_j) / d(c_i, c_j) }
+//	where s_i = avg distance within cluster i
+//	      d(c_i, c_j) = distance between cluster centroids
 func CalculateDaviesBouldin(patterns []*DSLPattern, clusters []Cluster, distFunc func(p1, p2 *DSLPattern) float64) float64 {
 	k := len(clusters)
 	if k <= 1 {
@@ -308,11 +311,12 @@ func interClusterDistance(c1, c2 Cluster, patterns []*DSLPattern, distFunc func(
 // Higher values indicate better clustering
 //
 // Formula:
-//   CH = (SSB / SSW) * ((N - k) / (k - 1))
-//   where SSB = between-cluster sum of squares
-//         SSW = within-cluster sum of squares
-//         N = number of patterns
-//         k = number of clusters
+//
+//	CH = (SSB / SSW) * ((N - k) / (k - 1))
+//	where SSB = between-cluster sum of squares
+//	      SSW = within-cluster sum of squares
+//	      N = number of patterns
+//	      k = number of clusters
 func CalculateCalinskiHarabasz(patterns []*DSLPattern, clusters []Cluster, distFunc func(p1, p2 *DSLPattern) float64) float64 {
 	n := len(patterns)
 	k := len(clusters)

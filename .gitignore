@@ -36,8 +36,20 @@ __pycache__/
 learned_patterns.yaml
 learned_patterns*.yaml
 
+# Evaluation framework outputs
+data/
+results/
+eval/data/
+eval/results/
+
 # Temporary documentation
 REFACTOR_COMPLETE.md
 CLEANUP_STATUS.md
 STEP3_SUMMARY.md
 LEVEL_BASED_GROUPING.md
+
+# Development/research artifacts (keep local only)
+literature_survey/
+eval/
+go.work
+go.work.sum

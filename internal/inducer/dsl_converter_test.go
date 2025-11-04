@@ -11,11 +11,11 @@ func TestDSLConverter_Convert(t *testing.T) {
 	converter := NewDSLConverter()
 
 	tests := []struct {
-		name            string
-		regexPattern    string
-		wantTemplate    string
-		wantPayloads    map[string][]string
-		wantErr         bool
+		name         string
+		regexPattern string
+		wantTemplate string
+		wantPayloads map[string][]string
+		wantErr      bool
 	}{
 		{
 			name:         "simple alternation",

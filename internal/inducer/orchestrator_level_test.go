@@ -31,7 +31,7 @@ func TestOrchestratorLevelGrouping(t *testing.T) {
 		"v2.webhook.api.example.com",
 	}
 
-	orchestrator := NewOrchestrator(nil) // Use default config
+	orchestrator := NewOrchestrator(100) // Use default config
 
 	patterns, err := orchestrator.LearnPatterns(domains)
 	if err != nil {
@@ -89,7 +89,7 @@ func TestOrchestratorSingleLevelOnly(t *testing.T) {
 		"db-prod-01.example.com",
 	}
 
-	orchestrator := NewOrchestrator(nil)
+	orchestrator := NewOrchestrator(100)
 
 	patterns, err := orchestrator.LearnPatterns(domains)
 	if err != nil {
@@ -129,7 +129,7 @@ func TestOrchestratorTwoLevelOnly(t *testing.T) {
 		"proxy.web.example.com",
 	}
 
-	orchestrator := NewOrchestrator(nil)
+	orchestrator := NewOrchestrator(100)
 
 	patterns, err := orchestrator.LearnPatterns(domains)
 	if err != nil {
@@ -172,7 +172,7 @@ func TestOrchestratorThreeLevelOnly(t *testing.T) {
 		"v2.proxy.web.example.com",
 	}
 
-	orchestrator := NewOrchestrator(nil)
+	orchestrator := NewOrchestrator(100)
 
 	patterns, err := orchestrator.LearnPatterns(domains)
 	if err != nil {
@@ -230,7 +230,7 @@ func TestOrchestratorRealWorldMixed(t *testing.T) {
 		"v2.webhook.api.projectdiscovery.io",
 	}
 
-	orchestrator := NewOrchestrator(nil)
+	orchestrator := NewOrchestrator(100)
 
 	patterns, err := orchestrator.LearnPatterns(domains)
 	if err != nil {
@@ -315,7 +315,7 @@ func TestOrchestratorLevelGroupStats(t *testing.T) {
 	}
 
 	// Now test orchestrator with these domains
-	orchestrator := NewOrchestrator(nil)
+	orchestrator := NewOrchestrator(100)
 	patterns, err := orchestrator.LearnPatterns(domains)
 	if err != nil {
 		t.Fatalf("LearnPatterns failed: %v", err)

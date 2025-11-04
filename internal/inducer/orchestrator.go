@@ -2,1034 +2,778 @@ package inducer
 
 import (
 	"fmt"
-	"math"
+	"math/rand"
 	"sort"
+	"strings"
+	"sync"
 
 	"github.com/projectdiscovery/gologger"
 )
 
-// OrchestratorConfig contains configuration for the pattern induction orchestrator
-type OrchestratorConfig struct {
-	// Edit distance clustering parameters
-	DistLow  int // Minimum edit distance delta (default: 2)
-	DistHigh int // Maximum edit distance delta (default: 10)
-
-	// Quality filtering parameters
-	MinCoverage   int     // Minimum coverage (domains matched) for pattern to be kept (default: dynamic)
-	MaxRatio      float64 // Maximum generation/observed ratio (default: 25.0)
-	AbsoluteLimit int     // Auto-accept patterns generating < N subdomains (default: 500)
-
-	// Processing options
-	EnableCompression bool // Enable number range compression (default: true)
-	EnableDedupe      bool // Enable pattern deduplication (default: true)
-}
-
-// DefaultOrchestratorConfig returns optimized defaults for high-confidence patterns
-// These values are tuned to achieve 70%+ confidence scores
-func DefaultOrchestratorConfig() *OrchestratorConfig {
-	return &OrchestratorConfig{
-		DistLow:           2,
-		DistHigh:          15, // Increased from 10 to allow more flexible clustering
-		MinCoverage:       2,  // Will be overridden with dynamic value in LearnPatterns
-		MaxRatio:          5.0, // Reduced from 25.0 to enforce tight patterns (70%+ confidence target)
-		AbsoluteLimit:     500,
-		EnableCompression: true,
-		EnableDedupe:      true,
-	}
-}
-
-// CalculateDynamicMinCoverage calculates minimum coverage threshold based on input size
-// Uses exponential decay to balance pattern discovery across different dataset sizes
-//
-// Formula: minsup(x) = e^(-ax-b) + c
-//   Where a=0.3, b=0.5, c=0.02 (asymptotic minimum at 2%)
-//
-// Results:
-//   - 5 domains   → 25% → 2 domains min  (flexible for small groups)
-//   - 25 domains  → 3%  → 1 domain min   (catches rare patterns)
-//   - 100 domains → 2%  → 2 domains min  (balanced)
-//   - 500 domains → 2%  → 10 domains min (prevents noise)
-//
-// This approach is based on research:
-//   - Philippe Fournier-Viger: Adaptive minimum support with exponential decay
-//   - Pattern mining literature: Small datasets need higher % but lower absolute thresholds
-//   - Regulator defaults: threshold=500 with max_ratio=25 as secondary filter
-//
-// Key insight: Let MORE patterns form initially, then apply strict ratio/confidence filtering
-func CalculateDynamicMinCoverage(inputSize int) int {
-	if inputSize <= 0 {
-		return 2
-	}
-
-	// Exponential decay parameters
-	a := 0.3
-	b := 0.5
-	c := 0.02 // Asymptotic minimum (2%)
-
-	// Calculate relative threshold using exponential decay
-	// Dividing inputSize by 10 smooths the curve
-	relativeThreshold := math.Exp(-a*float64(inputSize)/10.0-b) + c
-	absoluteThreshold := int(math.Ceil(float64(inputSize) * relativeThreshold))
-
-	// Apply bounds: min=2, max=10% of input (safety cap)
-	if absoluteThreshold < 2 {
-		absoluteThreshold = 2
-	}
-	maxThreshold := int(math.Ceil(float64(inputSize) * 0.10))
-	if absoluteThreshold > maxThreshold {
-		absoluteThreshold = maxThreshold
-	}
-
-	return absoluteThreshold
-}
-
-// Orchestrator implements the ORIGINAL regulator algorithm faithfully
-// WITHOUT premature optimizations (no partitioning, no bounded groups)
-//
-// This follows the algorithm from literature_survey/regulator/algorithm.md:
-// 1. Build full edit distance MEMO table (O(N²) space)
-// 2. Apply 3 clustering strategies:
-//    - Strategy 1: Global edit distance clustering
-//    - Strategy 2: N-gram prefix anchoring (TODO)
-//    - Strategy 3: Token-level prefix + edit distance (TODO)
-// 3. Generate DSL patterns directly from closures (bypasses regex generation)
-// 4. Quality filtering
-// 5. Deduplicate
-//
-// IMPORTANT: This is designed to work FIRST, not to scale.
-// We will profile and optimize AFTER it works correctly.
+// Orchestrator coordinates the complete pattern induction pipeline
 type Orchestrator struct {
-	config       *OrchestratorConfig
+	modeConfig   *ModeConfig
 	dslGenerator *DSLGenerator
 
-	// Data structures
-	domains     []string            // Input domains
-	edm         *EditDistanceMemo   // Edit distance memoization table (FULL O(N²))
-	allPatterns []*DSLPattern       // Accumulated patterns from all strategies
-
-	// Per-strategy pattern tracking
-	strategy1Patterns []*DSLPattern // Patterns from global clustering
-	strategy2Patterns []*DSLPattern // Patterns from n-gram prefix anchoring
-	strategy3Patterns []*DSLPattern // Patterns from token-level clustering
+	// Statistics
+	stats OrchestratorStats
 }
 
-// NewOrchestrator creates a new pattern induction orchestrator
-func NewOrchestrator(config *OrchestratorConfig) *Orchestrator {
-	if config == nil {
-		config = DefaultOrchestratorConfig()
-	}
+// OrchestratorStats tracks pipeline metrics
+type OrchestratorStats struct {
+	InputDomains      int
+	Mode              string
+	FilteredDomains   int
+	LevelGroups       int
+	Strategy1Patterns int
+	Strategy2Patterns int
+	Strategy3Patterns int
+	RawPatterns       int
+	AfterDedup        int
+	AfterAP           int
+	FinalPatterns     int
+	MemoryPeakMB      float64
+}
 
+// NewOrchestrator creates a new orchestrator with mode-based configuration
+func NewOrchestrator(inputSize int) *Orchestrator {
+	modeConfig := NewModeConfig(inputSize)
 	return &Orchestrator{
-		config:            config,
-		dslGenerator:      NewDSLGenerator(nil), // No semantic dictionary for now
-		edm:               NewEditDistanceMemo(),
-		allPatterns:       []*DSLPattern{},
-		strategy1Patterns: []*DSLPattern{},
-		strategy2Patterns: []*DSLPattern{},
-		strategy3Patterns: []*DSLPattern{},
+		modeConfig:   modeConfig,
+		dslGenerator: NewDSLGenerator(nil), // Dictionary set later via SetTokenDictionary
 	}
 }
 
-// SetTokenDictionary updates the token dictionary for semantic classification
-// This should be called before LearnPatterns() to enable semantic token naming
+// SetTokenDictionary configures semantic token classification
 func (o *Orchestrator) SetTokenDictionary(dict *TokenDictionary) {
-	if dict != nil {
-		o.dslGenerator = NewDSLGenerator(dict)
-	}
+	o.dslGenerator = NewDSLGenerator(dict)
 }
 
-// LearnPatterns executes the complete pattern induction pipeline
-// WITH level-based grouping to respect structural depth boundaries
-//
-// New Architecture:
-// 1. Group domains by level count (structural depth)
-// 2. Process each level group independently (avoids mixing different structures)
-// 3. Apply all 3 clustering strategies per level group
-// 4. Merge patterns from all groups
-//
-// Returns learned DSL patterns or error
+// GetStats returns orchestrator statistics
+func (o *Orchestrator) GetStats() *OrchestratorStats {
+	return &o.stats
+}
+
+// LearnPatterns is the main entry point for pattern induction
+// Implements the complete production pipeline with parallelization
 func (o *Orchestrator) LearnPatterns(domains []string) ([]*DSLPattern, error) {
+	o.stats.InputDomains = len(domains)
+	o.stats.Mode = o.modeConfig.Mode.String()
+
 	if len(domains) == 0 {
-		return nil, fmt.Errorf("no domains provided")
+		return []*DSLPattern{}, nil
 	}
 
-	o.domains = domains
+	gologger.Verbose().Msgf("[Mode: %s] Starting pattern induction with %d domains",
+		o.modeConfig.Mode, len(domains))
 
-	// Calculate dynamic minimum coverage threshold to prevent pattern explosion
-	o.config.MinCoverage = CalculateDynamicMinCoverage(len(domains))
-	gologger.Verbose().Msgf("Starting pattern induction on %d domains (min coverage: %d)", len(domains), o.config.MinCoverage)
+	// STEP 1: Input filtering
+	filtered := o.filterInvalidDomains(domains)
+	o.stats.FilteredDomains = len(filtered)
+	if len(filtered) == 0 {
+		gologger.Warning().Msg("No valid domains after filtering")
+		return []*DSLPattern{}, nil
+	}
+	gologger.Verbose().Msgf("[Step 1] Filtered %d → %d valid domains",
+		len(domains), len(filtered))
 
-	// STEP 1: Group domains by level count (structural depth)
-	// This prevents mixing domains with different hierarchical structures
-	// e.g., "api.example.com" (1 level) vs "scheduler.api.example.com" (2 levels)
-	gologger.Verbose().Msg("Step 1: Grouping domains by level count...")
-	levelGroups, err := GroupByLevelCount(domains)
+	// STEP 2: Level-based grouping
+	groupsMap, err := GroupByLevelCount(filtered)
 	if err != nil {
-		return nil, fmt.Errorf("failed to group by level count: %w", err)
+		return []*DSLPattern{}, fmt.Errorf("level grouping failed: %v", err)
 	}
-	PrintLevelGroupStats(levelGroups)
+	// Convert map to slice for easier parallelization
+	groups := make([]*LevelGroup, 0, len(groupsMap))
+	for _, group := range groupsMap {
+		groups = append(groups, group)
+	}
+	o.stats.LevelGroups = len(groups)
+	gologger.Verbose().Msgf("[Step 2] Grouped into %d level-based groups", len(groups))
 
-	// STEP 2: Process each level group independently
-	gologger.Verbose().Msgf("Step 2: Processing %d level groups...", len(levelGroups))
-	sortedGroups := GetSortedLevelGroups(levelGroups)
+	// STEP 3-6: Process level groups in parallel (L1 parallelization)
+	allPatterns := o.processLevelGroupsParallel(groups)
+	o.stats.RawPatterns = len(allPatterns)
+	gologger.Verbose().Msgf("[Step 3-6] Generated %d raw patterns from all strategies", len(allPatterns))
 
-	for i, group := range sortedGroups {
-		gologger.Verbose().Msgf("Processing group %d/%d: level=%d (%d domains)",
-			i+1, len(sortedGroups), group.LevelCount, len(group.Domains))
+	// STEP 7: Deduplication
+	allPatterns = o.deduplicatePatterns(allPatterns)
+	o.stats.AfterDedup = len(allPatterns)
+	gologger.Verbose().Msgf("[Step 7] Deduplicated %d → %d patterns", o.stats.RawPatterns, len(allPatterns))
 
-		// Process this level group
-		if err := o.processLevelGroup(group); err != nil {
-			gologger.Warning().Msgf("Failed to process level group %d: %v", group.LevelCount, err)
+	// STEP 8: Affinity Propagation (conditional)
+	if len(allPatterns) > o.modeConfig.MaxPatterns {
+		allPatterns = o.clusterPatternsAP(allPatterns)
+		o.stats.AfterAP = len(allPatterns)
+		gologger.Verbose().Msgf("[Step 8] AP clustering %d → %d patterns",
+			o.stats.AfterDedup, len(allPatterns))
+	} else {
+		o.stats.AfterAP = len(allPatterns)
+		gologger.Verbose().Msgf("[Step 8] Skipped AP clustering (%d patterns within limit)", len(allPatterns))
+	}
+
+	// STEP 9: Entropy-based selection
+	selected := o.selectPatternsByEntropy(allPatterns, filtered)
+	o.stats.FinalPatterns = len(selected)
+	gologger.Verbose().Msgf("[Step 9] Entropy selection %d → %d patterns (coverage: %.1f%%)",
+		len(allPatterns), len(selected), o.calculateCoverage(selected, filtered)*100)
+
+	// STEP 10: Enrichment
+	enriched := o.enrichPatterns(selected)
+	gologger.Verbose().Msgf("[Step 10] Enriched %d patterns with optional variables", len(enriched))
+
+	return enriched, nil
+}
+
+// filterInvalidDomains removes wildcards, root-only, invalid TLDs
+func (o *Orchestrator) filterInvalidDomains(domains []string) []string {
+	valid := make([]string, 0, len(domains))
+	for _, d := range domains {
+		if strings.HasPrefix(d, "*.") {
 			continue
 		}
+		// Additional validation happens in GroupByLevelCount
+		valid = append(valid, d)
 	}
-
-	// STEP 3: Post-processing (compression, quality, dedupe)
-	gologger.Verbose().Msg("Step 3: Post-processing patterns...")
-	finalPatterns := o.postProcess()
-
-	// STEP 4: Enrich patterns with optional variable support
-	// This adds empty string "" to appropriate variables for ClusterBomb flexibility
-	gologger.Verbose().Msg("Step 4: Enriching patterns with optional variables...")
-	enrichedPatterns := EnrichPatterns(finalPatterns, o.dslGenerator.dictionary)
-
-	gologger.Verbose().Msgf("Pattern induction complete: %d final patterns", len(enrichedPatterns))
-	return enrichedPatterns, nil
+	return valid
 }
 
-// processLevelGroup processes a single level group through all 3 strategies
-// This is the core of the level-aware pattern induction
-func (o *Orchestrator) processLevelGroup(group *LevelGroup) error {
+// processLevelGroupsParallel processes each level group in parallel
+// L1 PARALLELIZATION: Group-level parallelism (2-4x speedup)
+func (o *Orchestrator) processLevelGroupsParallel(groups []*LevelGroup) []*DSLPattern {
+	var wg sync.WaitGroup
+	resultChan := make(chan []*DSLPattern, len(groups))
+
+	for _, group := range groups {
+		wg.Add(1)
+		go func(g *LevelGroup) {
+			defer wg.Done()
+			patterns := o.processLevelGroup(g)
+			resultChan <- patterns
+		}(group)
+	}
+
+	// Wait and collect results
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	allPatterns := make([]*DSLPattern, 0)
+	for patterns := range resultChan {
+		allPatterns = append(allPatterns, patterns...)
+	}
+
+	return allPatterns
+}
+
+// processLevelGroup processes a single level group through all strategies
+func (o *Orchestrator) processLevelGroup(group *LevelGroup) []*DSLPattern {
 	groupDomains := group.Domains
 
-	// Dynamic minimum coverage based on group size (not global size)
-	groupMinCoverage := CalculateDynamicMinCoverage(len(groupDomains))
-	if groupMinCoverage < 2 {
-		groupMinCoverage = 2
+	// STEP 3: Adaptive sampling (FAST mode only)
+	if o.modeConfig.EnableGroupSampling && len(groupDomains) > o.modeConfig.MaxGroupSize {
+		groupDomains = o.sampleGroupStratified(groupDomains)
 	}
 
-	gologger.Debug().Msgf("  Group min coverage: %d", groupMinCoverage)
-
-	// Build local MEMO table for this group only
-	// This keeps memory bounded per group
-	gologger.Debug().Msg("  Building local MEMO table...")
-	localMemo := NewEditDistanceMemo()
-	localMemo.PrecomputeDistances(groupDomains)
-	gologger.Debug().Msgf("  Local MEMO table: %d entries", localMemo.Size())
-
-	// Build local Trie for this group
-	gologger.Debug().Msg("  Building local Trie...")
-	localTrie := NewTrie(groupDomains)
-
-	// Strategy 1: Global clustering within this level group
-	gologger.Debug().Msg("  Strategy 1: Global clustering (within level group)...")
-	if err := o.strategyGlobalClusteringWithMemo(groupDomains, localMemo, groupMinCoverage); err != nil {
-		return fmt.Errorf("strategy 1 failed: %w", err)
-	}
-
-	// Strategy 2: N-gram prefix anchoring within this level group
-	gologger.Debug().Msg("  Strategy 2: N-gram prefix (within level group)...")
-	if err := o.strategyNgramPrefixWithMemo(localTrie, groupDomains, localMemo, groupMinCoverage); err != nil {
-		return fmt.Errorf("strategy 2 failed: %w", err)
-	}
-
-	// Strategy 3: Token-level clustering within this level group
-	gologger.Debug().Msg("  Strategy 3: Token-level (within level group)...")
-	if err := o.strategyTokenLevelWithMemo(localTrie, groupDomains, localMemo, groupMinCoverage); err != nil {
-		return fmt.Errorf("strategy 3 failed: %w", err)
-	}
-
-	return nil
-}
-
-// buildMemoTable creates the full O(N²) edit distance table
-// This is the "expensive" operation we'll profile later
-func (o *Orchestrator) buildMemoTable() error {
-	// Use the PrecomputeDistances method from EditDistanceMemo
-	// This precomputes all pairwise distances
-	o.edm.PrecomputeDistances(o.domains)
-
-	return nil
-}
-
-// strategyGlobalClustering implements Strategy 1 from regulator
-// Clusters ALL domains by edit distance, trying multiple delta values
-func (o *Orchestrator) strategyGlobalClustering() error {
-	// Try multiple delta values (k=2, k=3, ..., k=10)
-	for k := o.config.DistLow; k <= o.config.DistHigh; k++ {
-		gologger.Debug().Msgf("  Clustering with delta=%d", k)
-
-		// Find edit closures with this delta
-		closures := o.editClosures(o.domains, k)
-		gologger.Debug().Msgf("  Found %d closures with delta=%d", len(closures), k)
-
-		// Generate patterns from each closure
-		for _, closure := range closures {
-			// Skip patterns with insufficient coverage
-			if len(closure.Domains) < o.config.MinCoverage {
-				continue
-			}
-
-			// Generate DSL pattern directly (no regex intermediate step)
-			pattern, err := o.dslGenerator.GeneratePattern(closure)
-			if err != nil {
-				continue
-			}
-
-			// Quality filtering (ratio already calculated in GeneratePattern)
-			if pattern.PassesQualityFilter() {
-				o.strategy1Patterns = append(o.strategy1Patterns, pattern)
-				o.allPatterns = append(o.allPatterns, pattern)
-			}
-		}
-	}
-
-	return nil
-}
-
-// editClosures implements the regulator edit_closures() function
-// For each domain, find all neighbors within delta edit distance
-func (o *Orchestrator) editClosures(domains []string, delta int) []*Closure {
-	closures := []*Closure{}
-	seen := make(map[string]bool)
-
-	for _, a := range domains {
-		// Build closure around domain 'a'
-		closureDomains := []string{a}
-
-		for _, b := range domains {
-			if a == b {
-				continue
-			}
-
-			// Lookup distance from MEMO table
-			dist := o.getDistance(a, b)
-			if dist <= delta {
-				closureDomains = append(closureDomains, b)
-			}
-		}
-
-		// Deduplicate: skip if we've seen this exact closure before
-		closureKey := o.closureKey(closureDomains)
-		if seen[closureKey] {
-			continue
-		}
-		seen[closureKey] = true
-
-		closure := &Closure{
-			Domains: closureDomains,
-			Delta:   delta,
-		}
-		closures = append(closures, closure)
-	}
-
-	return closures
-}
-
-// getDistance retrieves edit distance from MEMO table
-func (o *Orchestrator) getDistance(a, b string) int {
-	return o.edm.Distance(a, b)
-}
-
-// closureKey creates a unique key for deduplication
-// Sorts domains to ensure identical closures have same key
-func (o *Orchestrator) closureKey(domains []string) string {
-	// Sort domains for canonical key
-	sorted := make([]string, len(domains))
-	copy(sorted, domains)
-	sort.Strings(sorted)
-
-	// Concatenate with separator
-	key := ""
-	for _, d := range sorted {
-		key += d + "|"
-	}
-	return key
-}
-
-// Note: Quality filtering is now handled by DSLPattern.PassesQualityFilter()
-// The ratio calculation is done during pattern generation in DSLGenerator
-
-// estimateRegexGenerativity calculates how many strings a regex pattern can generate
-// This handles the specific regex constructs used by the pattern generator:
-//   - Alternations: (a|b|c) → 3 options
-//   - Character classes: [0-9] → 10 options, [a-z] → 26 options
-//   - Optional groups: (...)? → 2 options (present or absent)
-//   - Escaped characters: \., \-, etc. → 1 option (literal)
-func estimateRegexGenerativity(regex string) int {
-	count := 1
-	i := 0
-
-	for i < len(regex) {
-		switch regex[i] {
-		case '(':
-			// Find matching closing paren
-			closeIdx := findMatchingParen(regex, i)
-			if closeIdx == -1 {
-				i++
-				continue
-			}
-
-			// Extract group content
-			groupContent := regex[i+1 : closeIdx]
-
-			// Check if it's an optional group (followed by ?)
-			isOptional := closeIdx+1 < len(regex) && regex[closeIdx+1] == '?'
-
-			// Parse the group
-			groupCount := parseGroup(groupContent)
-
-			if isOptional {
-				// Optional: can be present or absent
-				count *= (groupCount + 1)
-				i = closeIdx + 2 // Skip past )?
-			} else {
-				// Required: multiply by group count
-				count *= groupCount
-				i = closeIdx + 1 // Skip past )
-			}
-
-		case '[':
-			// Character class
-			closeIdx := findClosingBracket(regex, i)
-			if closeIdx == -1 {
-				i++
-				continue
-			}
-
-			// Parse character class
-			classContent := regex[i+1 : closeIdx]
-			classCount := parseCharacterClass(classContent)
-			count *= classCount
-
-			i = closeIdx + 1 // Skip past ]
-
-		case '\\':
-			// Escaped character - literal, counts as 1
-			i += 2 // Skip escape and next char
-
-		default:
-			// Regular character - counts as 1
-			i++
-		}
-	}
-
-	return count
-}
-
-// parseGroup parses the content of a group and returns the number of alternatives
-// Handles alternations like "a|b|c" → 3
-func parseGroup(content string) int {
-	if content == "" {
-		return 1
-	}
-
-	// Check if it contains alternations (|)
-	// Need to be careful about nested groups
-	alternatives := splitAlternatives(content)
-
-	if len(alternatives) <= 1 {
-		// No alternations - calculate generativity of the content
-		return estimateRegexGenerativity(content)
-	}
-
-	// Multiple alternations - sum the generativity of each alternative
-	totalCount := 0
-	for _, alt := range alternatives {
-		totalCount += estimateRegexGenerativity(alt)
-	}
-
-	return totalCount
-}
-
-// splitAlternatives splits a group content by top-level | characters
-// Ignores | inside nested groups or character classes
-func splitAlternatives(content string) []string {
-	if content == "" {
-		return []string{}
-	}
-
-	alternatives := []string{}
-	current := ""
-	depth := 0
-	inCharClass := false
-
-	for i := 0; i < len(content); i++ {
-		ch := content[i]
-
-		switch ch {
-		case '\\':
-			// Escaped character - add both chars
-			current += string(ch)
-			if i+1 < len(content) {
-				i++
-				current += string(content[i])
-			}
-
-		case '[':
-			if !inCharClass {
-				inCharClass = true
-			}
-			current += string(ch)
-
-		case ']':
-			if inCharClass {
-				inCharClass = false
-			}
-			current += string(ch)
-
-		case '(':
-			if !inCharClass {
-				depth++
-			}
-			current += string(ch)
-
-		case ')':
-			if !inCharClass {
-				depth--
-			}
-			current += string(ch)
-
-		case '|':
-			if depth == 0 && !inCharClass {
-				// Top-level alternation separator
-				alternatives = append(alternatives, current)
-				current = ""
-			} else {
-				current += string(ch)
-			}
-
-		default:
-			current += string(ch)
-		}
-	}
-
-	// Add last alternative
-	if current != "" {
-		alternatives = append(alternatives, current)
-	}
-
-	if len(alternatives) == 0 {
-		return []string{content}
-	}
-
-	return alternatives
-}
-
-// parseCharacterClass parses a character class like [0-9] or [a-zA-Z]
-// Returns the number of characters matched
-func parseCharacterClass(content string) int {
-	if content == "" {
-		return 1
-	}
-
-	count := 0
-	i := 0
-
-	for i < len(content) {
-		if i+2 < len(content) && content[i+1] == '-' {
-			// Range like 0-9 or a-z
-			start := content[i]
-			end := content[i+2]
-
-			if end >= start {
-				count += int(end-start) + 1
-			} else {
-				count++ // Invalid range, count as single char
-			}
-
-			i += 3
-
-		} else if content[i] == '\\' {
-			// Escaped character
-			count++
-			i += 2
-
-		} else {
-			// Single character
-			count++
-			i++
-		}
-	}
-
-	return count
-}
-
-// findMatchingParen finds the matching closing parenthesis
-// Returns -1 if not found
-func findMatchingParen(s string, start int) int {
-	if start >= len(s) || s[start] != '(' {
-		return -1
-	}
-
-	depth := 1
-	inCharClass := false
-
-	for i := start + 1; i < len(s); i++ {
-		ch := s[i]
-
-		if ch == '\\' {
-			// Skip escaped character
-			i++
-			continue
-		}
-
-		if ch == '[' && !inCharClass {
-			inCharClass = true
-			continue
-		}
-
-		if ch == ']' && inCharClass {
-			inCharClass = false
-			continue
-		}
-
-		if inCharClass {
-			continue
-		}
-
-		if ch == '(' {
-			depth++
-		} else if ch == ')' {
-			depth--
-			if depth == 0 {
-				return i
-			}
-		}
-	}
-
-	return -1
-}
-
-// findClosingBracket finds the matching closing bracket for a character class
-// Returns -1 if not found
-func findClosingBracket(s string, start int) int {
-	if start >= len(s) || s[start] != '[' {
-		return -1
-	}
-
-	for i := start + 1; i < len(s); i++ {
-		if s[i] == '\\' {
-			// Skip escaped character
-			i++
-			continue
-		}
-
-		if s[i] == ']' {
-			return i
-		}
-	}
-
-	return -1
-}
-
-// postProcess handles quality filtering and deduplication
-func (o *Orchestrator) postProcess() []*DSLPattern {
-	patterns := o.allPatterns
-
-	// Step 1: Deduplicate by template (remove exact duplicates)
-	if o.config.EnableDedupe {
-		seen := make(map[string]bool)
-		unique := []*DSLPattern{}
-
-		for _, pattern := range patterns {
-			if !seen[pattern.Template] {
-				seen[pattern.Template] = true
-				unique = append(unique, pattern)
-			}
-		}
-
-		gologger.Debug().Msgf("Deduplication: %d → %d patterns", len(patterns), len(unique))
-		patterns = unique
-	}
-
-	// Step 2: Smart pattern consolidation with ADAPTIVE MAX_PATTERNS
-	// Automatically adjust based on dataset size for optimal coverage
-	// Based on cross-domain testing (hackerone, zomato, stripe, openai, tstaging)
-	//
-	// Results:
-	//   Small (< 50):     8 patterns, 62% conf, no clustering needed
-	//   Mid (50-200):     6 patterns, 87% coverage, 49% conf
-	//   Large (200-500):  7-9 patterns, 50-51% coverage, 57-58% conf
-	//   XLarge (500+):    5-9 patterns, 41-51% coverage, 45-57% conf
-	datasetSize := len(o.domains)
-	var maxPatterns int
-
-	if datasetSize < 50 {
-		maxPatterns = 5 // Small: prioritize quality over quantity
-		gologger.Debug().Msgf("Small dataset (%d domains): targeting %d high-quality patterns", datasetSize, maxPatterns)
-	} else if datasetSize < 200 {
-		maxPatterns = 8 // Mid: balanced approach (87% coverage achievable)
-		gologger.Debug().Msgf("Mid dataset (%d domains): targeting %d patterns", datasetSize, maxPatterns)
-	} else if datasetSize < 500 {
-		maxPatterns = 10 // Large: more patterns for diverse structures
-		gologger.Debug().Msgf("Large dataset (%d domains): targeting %d patterns", datasetSize, maxPatterns)
-	} else {
-		maxPatterns = 12 // XLarge: allow more patterns for complex organizations
-		gologger.Debug().Msgf("XLarge dataset (%d domains): targeting %d patterns", datasetSize, maxPatterns)
-	}
-	if len(patterns) <= maxPatterns {
-		gologger.Verbose().Msgf("Pattern count (%d) within target (%d), skipping clustering",
-			len(patterns), maxPatterns)
-	} else {
-		gologger.Verbose().Msgf("Pattern count (%d) exceeds target (%d), clustering to consolidate",
-			len(patterns), maxPatterns)
-
-		clusterConfig := DefaultClusterConfig
-		clusterConfig.MergeStrategy = MergeUnionConservative
-		clusterConfig.MinClusterSize = 1
-
-		// Use PURE STRUCTURAL weights (template + token sequence ONLY)
-		// Domain overlap EXCLUDED because patterns with identical structure
-		// can match completely different domain sets (this is valid!)
-		clusterConfig.DistanceWeights = PureStructuralWeights
-
-		// Adjust AP preference to target ~maxPatterns clusters
-		// Higher preference → more clusters (closer to maxPatterns)
-		// Lower preference → fewer clusters
-		// Use median similarity as baseline, then adjust upward to get more clusters
-		clusterConfig.APConfig.Preference = -0.3 // Higher = more clusters (targeting ~10)
-
-		gologger.Debug().Msgf("Clustering config: weights=pure_structural, preference=%.2f, target=%d patterns",
-			clusterConfig.APConfig.Preference, maxPatterns)
-
-		clustered, metrics, err := ClusterPatterns(patterns, clusterConfig)
-		if err != nil {
-			gologger.Warning().Msgf("Clustering failed: %v, continuing with unclustered patterns", err)
-		} else {
-			gologger.Verbose().Msgf("Clustering: %d → %d patterns (target: %d, silhouette=%.3f)",
-				len(patterns), len(clustered), maxPatterns, metrics.Silhouette)
-
-			// Check if we're close to target
-			if len(clustered) <= maxPatterns {
-				gologger.Info().Msgf("✓ Consolidation successful: %d patterns (within target of %d)",
-					len(clustered), maxPatterns)
-			} else {
-				gologger.Warning().Msgf("⚠ Still have %d patterns (target: %d), may need stricter preference",
-					len(clustered), maxPatterns)
-			}
-
-			patterns = clustered
-		}
-	}
-
-	// Step 3: Adaptive quality filtering based on dataset size
-	// Small datasets: stricter (prioritize quality)
-	// Large datasets: lenient (prioritize coverage)
-	minConfidence := 0.50 // Legacy parameter (unused, now adaptive inside function)
-	patterns = FilterLowQualityTokens(patterns, minConfidence, o.config.MaxRatio, datasetSize)
+	// STEP 4: Build local indexes
+	memo := NewEditDistanceMemo()
+	memo.PrecomputeDistances(groupDomains)
+	trie := NewTrie(groupDomains)
+
+	// STEP 5: Three strategies in parallel (L2 PARALLELIZATION)
+	patterns := o.runStrategiesParallel(groupDomains, memo, trie)
 
 	return patterns
 }
 
-// Stats returns statistics about pattern induction
-type OrchestratorStats struct {
-	InputDomains      int
-	MemoTableSize     int
-	Strategy1Patterns int
-	Strategy2Patterns int
-	Strategy3Patterns int
-	TotalPatterns     int
-	FinalPatterns     int
-}
-
-// GetStats returns current statistics
-func (o *Orchestrator) GetStats() *OrchestratorStats {
-	return &OrchestratorStats{
-		InputDomains:      len(o.domains),
-		MemoTableSize:     o.edm.Size(),
-		Strategy1Patterns: len(o.strategy1Patterns),
-		Strategy2Patterns: len(o.strategy2Patterns),
-		Strategy3Patterns: len(o.strategy3Patterns),
-		TotalPatterns:     len(o.allPatterns),
-		FinalPatterns:     len(o.allPatterns),
+// sampleGroupStratified performs stratified sampling for FAST mode
+func (o *Orchestrator) sampleGroupStratified(domains []string) []string {
+	// Partition by first token
+	partitions := make(map[string][]string)
+	for _, d := range domains {
+		parts := strings.Split(strings.Split(d, ".")[0], "-")
+		if len(parts) > 0 {
+			firstToken := parts[0]
+			partitions[firstToken] = append(partitions[firstToken], d)
+		}
 	}
+
+	sampled := make([]string, 0, o.modeConfig.MaxGroupSize)
+	totalSize := len(domains)
+
+	for _, partition := range partitions {
+		freq := float64(len(partition)) / float64(totalSize)
+
+		var toKeep []string
+		if freq < 0.05 {
+			// Rare tokens - keep all
+			toKeep = partition
+		} else if freq > 0.50 {
+			// Dominant tokens - aggressive sampling
+			sampleSize := minInt(200, len(partition))
+			toKeep = sampleRandom(partition, sampleSize)
+		} else {
+			// Normal tokens - moderate sampling
+			sampleSize := int(float64(len(partition)) * 0.60)
+			if sampleSize < 1 {
+				sampleSize = 1
+			}
+			toKeep = sampleRandom(partition, sampleSize)
+		}
+
+		sampled = append(sampled, toKeep...)
+	}
+
+	// Shuffle to avoid bias
+	rand.Shuffle(len(sampled), func(i, j int) {
+		sampled[i], sampled[j] = sampled[j], sampled[i]
+	})
+
+	return sampled
 }
 
-// strategyNgramPrefix implements Strategy 2: N-gram prefix anchoring
-// Groups domains by common N-gram prefixes and applies edit distance clustering
-// within each group. This reduces memory by avoiding full O(N²) MEMO table.
-//
-// Algorithm:
-// 1. Extract 1-gram, 2-gram, 3-gram prefixes using Trie
-// 2. For each prefix group (domains sharing same prefix):
-//    - Build local edit distance MEMO for this group only
-//    - Apply edit distance clustering within group
-//    - Generate patterns from closures
-// 3. This partitions the domain space by prefix similarity
-func (o *Orchestrator) strategyNgramPrefix(trie *Trie) error {
-	// Try different N-gram sizes (1, 2, 3)
-	for n := 1; n <= 3; n++ {
-		gologger.Debug().Msgf("  Strategy 2: N-gram=%d", n)
+// runStrategiesParallel runs all three strategies in parallel
+// L2 PARALLELIZATION: Strategy-level parallelism (3x speedup)
+func (o *Orchestrator) runStrategiesParallel(domains []string, memo *EditDistanceMemo, trie *Trie) []*DSLPattern {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 
-		// Get prefix groups from Trie
-		prefixGroups := trie.GetNgramPrefixes(n)
-		gologger.Debug().Msgf("  Found %d prefix groups for n=%d", len(prefixGroups), n)
+	allPatterns := make([]*DSLPattern, 0)
 
-		// Process each prefix group independently
-		for prefix, domainIDs := range prefixGroups {
-			if len(domainIDs) <= 1 {
-				continue // Skip single-domain groups
-			}
+	// Strategy 1: Global clustering (ALWAYS)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		patterns := o.strategyGlobal(domains, memo)
+		mu.Lock()
+		allPatterns = append(allPatterns, patterns...)
+		o.stats.Strategy1Patterns += len(patterns)
+		mu.Unlock()
+	}()
 
-			// Extract actual domain strings
-			groupDomains := make([]string, len(domainIDs))
-			for i, id := range domainIDs {
-				groupDomains[i] = o.domains[id]
-			}
+	// Strategy 2: N-gram anchoring (CONDITIONAL)
+	if o.shouldRunStrategy2(len(domains)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			patterns := o.strategyNgram(domains, memo, trie)
+			mu.Lock()
+			allPatterns = append(allPatterns, patterns...)
+			o.stats.Strategy2Patterns += len(patterns)
+			mu.Unlock()
+		}()
+	}
 
-			gologger.Debug().Msgf("  Processing prefix '%s': %d domains", prefix, len(groupDomains))
+	// Strategy 3: Token-level clustering (ALWAYS)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		patterns := o.strategyTokenLevel(domains, memo, trie)
+		mu.Lock()
+		allPatterns = append(allPatterns, patterns...)
+		o.stats.Strategy3Patterns += len(patterns)
+		mu.Unlock()
+	}()
 
-			// Build local MEMO table for this group only
-			localMemo := NewEditDistanceMemo()
-			localMemo.PrecomputeDistances(groupDomains)
+	wg.Wait()
+	return allPatterns
+}
 
-			// Apply clustering with different deltas
-			for k := o.config.DistLow; k <= o.config.DistHigh; k++ {
-				closures := o.editClosuresWithMemo(groupDomains, k, localMemo)
+// shouldRunStrategy2 determines if Strategy 2 should run
+func (o *Orchestrator) shouldRunStrategy2(groupSize int) bool {
+	if !o.modeConfig.EnableNgramStrategy {
+		return false
+	}
+	return groupSize > o.modeConfig.NgramThreshold
+}
 
-				// Generate patterns from closures
-				for _, closure := range closures {
-					// Skip patterns with insufficient coverage
-					if len(closure.Domains) < o.config.MinCoverage {
-						continue
-					}
+// strategyGlobal implements Strategy 1: Global clustering
+// L4 PARALLELIZATION: Distance levels in parallel (FAST mode)
+func (o *Orchestrator) strategyGlobal(domains []string, memo *EditDistanceMemo) []*DSLPattern {
+	patterns := make([]*DSLPattern, 0)
+	minCoverage := maxInt(2, len(domains)/100) // 1% min
 
-					// Generate DSL pattern directly
-					pattern, err := o.dslGenerator.GeneratePattern(closure)
-					if err != nil {
-						continue
-					}
+	distLevels := make([]int, 0)
+	for k := o.modeConfig.DistLow; k <= o.modeConfig.DistHigh; k++ {
+		distLevels = append(distLevels, k)
+	}
 
-					// Quality filtering
-					if pattern.PassesQualityFilter() {
-						o.strategy2Patterns = append(o.strategy2Patterns, pattern)
-						o.allPatterns = append(o.allPatterns, pattern)
-					}
+	// FAST mode: parallelize distance levels
+	if o.modeConfig.Mode == ModeFast {
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+
+		for _, k := range distLevels {
+			wg.Add(1)
+			go func(delta int) {
+				defer wg.Done()
+				closures := o.editClosuresWithMemo(domains, delta, memo)
+				dslPatterns := o.generateDSLFromClosures(closures, minCoverage)
+				mu.Lock()
+				patterns = append(patterns, dslPatterns...)
+				mu.Unlock()
+			}(k)
+		}
+		wg.Wait()
+	} else {
+		// THOROUGH/BALANCED: sequential
+		for _, k := range distLevels {
+			closures := o.editClosuresWithMemo(domains, k, memo)
+			patterns = append(patterns, o.generateDSLFromClosures(closures, minCoverage)...)
+		}
+	}
+
+	return patterns
+}
+
+// strategyNgram implements Strategy 2: N-gram prefix anchoring
+// L4 PARALLELIZATION: Partitions in parallel (FAST mode, >10 partitions)
+func (o *Orchestrator) strategyNgram(domains []string, memo *EditDistanceMemo, trie *Trie) []*DSLPattern {
+	// Determine n-gram size
+	ngramSize := 2
+	if len(domains) > 300 {
+		ngramSize = 3
+	}
+
+	// Partition by n-gram prefixes
+	partitions := o.partitionByNgram(domains, ngramSize)
+	minCoverage := maxInt(2, len(domains)/100)
+
+	patterns := make([]*DSLPattern, 0)
+
+	// FAST mode with many partitions: parallelize
+	if o.modeConfig.Mode == ModeFast && len(partitions) > 10 {
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+
+		for _, partition := range partitions {
+			wg.Add(1)
+			go func(p []string) {
+				defer wg.Done()
+				localMemo := NewEditDistanceMemo()
+				localMemo.PrecomputeDistances(p)
+				for k := o.modeConfig.DistLow; k <= o.modeConfig.DistHigh; k++ {
+					closures := o.editClosuresWithMemo(p, k, localMemo)
+					dslPatterns := o.generateDSLFromClosures(closures, minCoverage)
+					mu.Lock()
+					patterns = append(patterns, dslPatterns...)
+					mu.Unlock()
 				}
+			}(partition)
+		}
+		wg.Wait()
+	} else {
+		// Sequential
+		for _, partition := range partitions {
+			localMemo := NewEditDistanceMemo()
+			localMemo.PrecomputeDistances(partition)
+			for k := o.modeConfig.DistLow; k <= o.modeConfig.DistHigh; k++ {
+				closures := o.editClosuresWithMemo(partition, k, localMemo)
+				patterns = append(patterns, o.generateDSLFromClosures(closures, minCoverage)...)
 			}
 		}
 	}
 
-	return nil
+	return patterns
 }
 
 // strategyTokenLevel implements Strategy 3: Token-level clustering
-// Groups domains by first token value and applies edit distance clustering
-// within each token group.
-//
-// Algorithm:
-// 1. Tokenize all domains into token arrays
-// 2. Group domains by first token (token-level prefix)
-// 3. For each token group:
-//    - Build local edit distance MEMO
-//    - Apply clustering
-//    - Generate patterns
-func (o *Orchestrator) strategyTokenLevel(trie *Trie) error {
-	gologger.Debug().Msg("  Strategy 3: Token-level clustering")
+// L4 PARALLELIZATION: Partitions in parallel (FAST mode, >10 partitions)
+func (o *Orchestrator) strategyTokenLevel(domains []string, memo *EditDistanceMemo, trie *Trie) []*DSLPattern {
+	// Partition by first token
+	partitions := o.partitionByFirstToken(domains)
 
-	// Get token groups from Trie (uses internal tokenization)
-	tokenGroups := trie.GetTokenGroupDomains()
-	gologger.Debug().Msgf("  Found %d token groups", len(tokenGroups))
+	// FAST mode: limit to top 30 tokens + rare
+	if o.modeConfig.EnableTokenLimiting && len(partitions) > 50 {
+		partitions = o.limitTokenPartitions(partitions, o.modeConfig.MaxTokenGroups)
+	}
 
-	// Process each token group
-	for token, groupDomains := range tokenGroups {
-		if len(groupDomains) <= 1 {
-			continue
+	minCoverage := maxInt(2, len(domains)/100)
+	patterns := make([]*DSLPattern, 0)
+
+	// FAST mode with many partitions: parallelize
+	if o.modeConfig.Mode == ModeFast && len(partitions) > 10 {
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+
+		for _, partition := range partitions {
+			wg.Add(1)
+			go func(p []string) {
+				defer wg.Done()
+				localMemo := NewEditDistanceMemo()
+				localMemo.PrecomputeDistances(p)
+				for k := o.modeConfig.DistLow; k <= o.modeConfig.DistHigh; k++ {
+					closures := o.editClosuresWithMemo(p, k, localMemo)
+					dslPatterns := o.generateDSLFromClosures(closures, minCoverage)
+					mu.Lock()
+					patterns = append(patterns, dslPatterns...)
+					mu.Unlock()
+				}
+			}(partition)
 		}
-
-		gologger.Debug().Msgf("  Token group '%s': %d domains", token, len(groupDomains))
-
-		// Build local MEMO for this group
-		localMemo := NewEditDistanceMemo()
-		localMemo.PrecomputeDistances(groupDomains)
-
-		// Apply clustering with different deltas
-		for k := o.config.DistLow; k <= o.config.DistHigh; k++ {
-			closures := o.editClosuresWithMemo(groupDomains, k, localMemo)
-
-			for _, closure := range closures {
-				// Skip patterns with insufficient coverage
-				if len(closure.Domains) < o.config.MinCoverage {
-					continue
-				}
-
-				// Generate DSL pattern directly
-				pattern, err := o.dslGenerator.GeneratePattern(closure)
-				if err != nil {
-					continue
-				}
-
-				// Quality filtering
-				if pattern.PassesQualityFilter() {
-					o.strategy3Patterns = append(o.strategy3Patterns, pattern)
-					o.allPatterns = append(o.allPatterns, pattern)
-				}
+		wg.Wait()
+	} else {
+		// Sequential
+		for _, partition := range partitions {
+			localMemo := NewEditDistanceMemo()
+			localMemo.PrecomputeDistances(partition)
+			for k := o.modeConfig.DistLow; k <= o.modeConfig.DistHigh; k++ {
+				closures := o.editClosuresWithMemo(partition, k, localMemo)
+				patterns = append(patterns, o.generateDSLFromClosures(closures, minCoverage)...)
 			}
 		}
 	}
 
-	return nil
+	return patterns
 }
 
-// editClosuresWithMemo builds edit closures using a local MEMO table
-// This is similar to editClosures but uses a provided memo instead of the global one
-// Useful for processing bounded groups in Strategy 2 and 3
+// editClosuresWithMemo finds edit closures using memoized distances
 func (o *Orchestrator) editClosuresWithMemo(domains []string, delta int, memo *EditDistanceMemo) []*Closure {
-	closures := []*Closure{}
-	seen := make(map[string]bool)
+	visited := make(map[string]bool)
+	closures := make([]*Closure, 0)
 
-	for _, a := range domains {
-		// Build closure around domain 'a'
-		closureDomains := []string{a}
-
-		for _, b := range domains {
-			if a == b {
-				continue
-			}
-
-			// Lookup distance from local MEMO table
-			dist := memo.Distance(a, b)
-			if dist <= delta {
-				closureDomains = append(closureDomains, b)
-			}
-		}
-
-		// Deduplicate: skip if we've seen this exact closure before
-		closureKey := o.closureKey(closureDomains)
-		if seen[closureKey] {
+	for _, seed := range domains {
+		if visited[seed] {
 			continue
 		}
-		seen[closureKey] = true
 
-		closure := &Closure{
-			Domains: closureDomains,
-			Delta:   delta,
+		closure := []string{seed}
+		visited[seed] = true
+
+		for _, candidate := range domains {
+			if visited[candidate] {
+				continue
+			}
+			if memo.Distance(seed, candidate) <= delta {
+				closure = append(closure, candidate)
+				visited[candidate] = true
+			}
 		}
-		closures = append(closures, closure)
+
+		if len(closure) >= 2 {
+			closures = append(closures, &Closure{
+				Domains: closure,
+				Delta:   delta,
+				Size:    len(closure),
+			})
+		}
 	}
 
 	return closures
 }
 
-// strategyGlobalClusteringWithMemo implements Strategy 1 using a local MEMO table
-// This is used when processing suffix groups independently
-func (o *Orchestrator) strategyGlobalClusteringWithMemo(domains []string, memo *EditDistanceMemo, minCoverage int) error {
-	// Try multiple delta values (k=2, k=3, ..., k=10)
-	for k := o.config.DistLow; k <= o.config.DistHigh; k++ {
-		// Find edit closures with this delta using local memo
-		closures := o.editClosuresWithMemo(domains, k, memo)
+// generateDSLFromClosures converts closures to DSL patterns
+func (o *Orchestrator) generateDSLFromClosures(closures []*Closure, minCoverage int) []*DSLPattern {
+	patterns := make([]*DSLPattern, 0)
 
-		// Generate patterns from each closure
-		for _, closure := range closures {
-			// Skip patterns with insufficient coverage
-			if len(closure.Domains) < minCoverage {
-				continue
-			}
-
-			// Generate DSL pattern directly (no regex intermediate step)
-			pattern, err := o.dslGenerator.GeneratePattern(closure)
-			if err != nil {
-				continue
-			}
-
-			// Quality filtering (ratio already calculated in GeneratePattern)
-			if pattern.PassesQualityFilter() {
-				o.strategy1Patterns = append(o.strategy1Patterns, pattern)
-				o.allPatterns = append(o.allPatterns, pattern)
-			}
-		}
-	}
-
-	return nil
-}
-
-// strategyNgramPrefixWithMemo implements Strategy 2 using local data structures
-// This is used when processing suffix groups independently
-func (o *Orchestrator) strategyNgramPrefixWithMemo(trie *Trie, domains []string, memo *EditDistanceMemo, minCoverage int) error {
-	// Try different N-gram sizes (1, 2, 3)
-	for n := 1; n <= 3; n++ {
-		// Get prefix groups from local Trie
-		prefixGroups := trie.GetNgramPrefixes(n)
-
-		// Process each prefix group independently
-		for _, domainIDs := range prefixGroups {
-			if len(domainIDs) <= 1 {
-				continue // Skip single-domain groups
-			}
-
-			// Extract actual domain strings
-			groupDomains := make([]string, len(domainIDs))
-			for i, id := range domainIDs {
-				groupDomains[i] = domains[id]
-			}
-
-			// Apply clustering with different deltas
-			for k := o.config.DistLow; k <= o.config.DistHigh; k++ {
-				closures := o.editClosuresWithMemo(groupDomains, k, memo)
-
-				// Generate patterns from closures
-				for _, closure := range closures {
-					// Skip patterns with insufficient coverage
-					if len(closure.Domains) < minCoverage {
-						continue
-					}
-
-					// Generate DSL pattern directly
-					pattern, err := o.dslGenerator.GeneratePattern(closure)
-					if err != nil {
-						continue
-					}
-
-					// Quality filtering
-					if pattern.PassesQualityFilter() {
-						o.strategy2Patterns = append(o.strategy2Patterns, pattern)
-						o.allPatterns = append(o.allPatterns, pattern)
-					}
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// strategyTokenLevelWithMemo implements Strategy 3 using local data structures
-// This is used when processing suffix groups independently
-func (o *Orchestrator) strategyTokenLevelWithMemo(trie *Trie, domains []string, memo *EditDistanceMemo, minCoverage int) error {
-	// Get token groups from local Trie
-	tokenGroups := trie.GetTokenGroupDomains()
-
-	// Process each token group
-	for _, groupDomains := range tokenGroups {
-		if len(groupDomains) <= 1 {
+	for _, closure := range closures {
+		if len(closure.Domains) < minCoverage {
 			continue
 		}
 
-		// Apply clustering with different deltas
-		for k := o.config.DistLow; k <= o.config.DistHigh; k++ {
-			closures := o.editClosuresWithMemo(groupDomains, k, memo)
+		// Generate DSL pattern
+		pattern, err := o.dslGenerator.GeneratePattern(closure)
+		if err != nil {
+			continue
+		}
 
-			for _, closure := range closures {
-				// Skip patterns with insufficient coverage
-				if len(closure.Domains) < minCoverage {
-					continue
-				}
+		// Quality filter: ratio check
+		if pattern.Ratio > o.modeConfig.MaxRatio {
+			continue
+		}
 
-				// Generate DSL pattern directly
-				pattern, err := o.dslGenerator.GeneratePattern(closure)
-				if err != nil {
-					continue
-				}
+		patterns = append(patterns, pattern)
+	}
 
-				// Quality filtering
-				if pattern.PassesQualityFilter() {
-					o.strategy3Patterns = append(o.strategy3Patterns, pattern)
-					o.allPatterns = append(o.allPatterns, pattern)
+	return patterns
+}
+
+// partitionByNgram partitions domains by n-gram prefixes
+func (o *Orchestrator) partitionByNgram(domains []string, n int) [][]string {
+	partitions := make(map[string][]string)
+
+	for _, d := range domains {
+		tokens := strings.Split(strings.Split(d, ".")[0], "-")
+		ngram := ""
+		for i := 0; i < n && i < len(tokens); i++ {
+			if i > 0 {
+				ngram += "-"
+			}
+			ngram += tokens[i]
+		}
+		partitions[ngram] = append(partitions[ngram], d)
+	}
+
+	result := make([][]string, 0, len(partitions))
+	for _, p := range partitions {
+		if len(p) >= 2 {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// partitionByFirstToken partitions domains by first token
+func (o *Orchestrator) partitionByFirstToken(domains []string) [][]string {
+	partitions := make(map[string][]string)
+
+	for _, d := range domains {
+		tokens := strings.Split(strings.Split(d, ".")[0], "-")
+		if len(tokens) > 0 {
+			partitions[tokens[0]] = append(partitions[tokens[0]], d)
+		}
+	}
+
+	result := make([][]string, 0, len(partitions))
+	for _, p := range partitions {
+		if len(p) >= 2 {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// limitTokenPartitions limits to top K tokens + rare tokens + merge others
+func (o *Orchestrator) limitTokenPartitions(partitions [][]string, maxGroups int) [][]string {
+	if len(partitions) <= maxGroups {
+		return partitions
+	}
+
+	totalSize := 0
+	for _, p := range partitions {
+		totalSize += len(p)
+	}
+
+	// Sort by size
+	type tokenGroup struct {
+		domains []string
+		freq    float64
+	}
+	groups := make([]tokenGroup, 0, len(partitions))
+	for _, p := range partitions {
+		groups = append(groups, tokenGroup{
+			domains: p,
+			freq:    float64(len(p)) / float64(totalSize),
+		})
+	}
+	sort.Slice(groups, func(i, j int) bool {
+		return len(groups[i].domains) > len(groups[j].domains)
+	})
+
+	// Keep top K
+	result := make([][]string, 0, maxGroups)
+	for i := 0; i < maxGroups && i < len(groups); i++ {
+		result = append(result, groups[i].domains)
+	}
+
+	// Keep rare tokens (< 1% frequency)
+	for i := maxGroups; i < len(groups); i++ {
+		if groups[i].freq < 0.01 {
+			result = append(result, groups[i].domains)
+		}
+	}
+
+	return result
+}
+
+// deduplicatePatterns removes exact duplicate templates
+func (o *Orchestrator) deduplicatePatterns(patterns []*DSLPattern) []*DSLPattern {
+	seen := make(map[string]*DSLPattern)
+
+	for _, p := range patterns {
+		if existing, exists := seen[p.Template]; exists {
+			// Keep pattern with higher coverage
+			if p.Coverage > existing.Coverage {
+				seen[p.Template] = p
+			}
+		} else {
+			seen[p.Template] = p
+		}
+	}
+
+	result := make([]*DSLPattern, 0, len(seen))
+	for _, p := range seen {
+		result = append(result, p)
+	}
+	return result
+}
+
+// clusterPatternsAP applies Affinity Propagation clustering using the existing ClusterPatterns function
+func (o *Orchestrator) clusterPatternsAP(patterns []*DSLPattern) []*DSLPattern {
+	if len(patterns) <= o.modeConfig.MaxPatterns {
+		return patterns
+	}
+
+	// Configure clustering with mode-specific parameters
+	config := ClusterConfig{
+		Enabled: true,
+		DistanceWeights: DistanceWeights{
+			Template:  0.4,
+			TokenSeq:  0.3,
+			VarStruct: 0.3,
+			Domain:    0.0, // Pure structural similarity (no domain overlap)
+			Quality:   0.0,
+		},
+		APConfig: AffinityPropagationConfig{
+			MaxIterations: o.modeConfig.APIterations,
+			Convergence:   15,
+			Damping:       0.5,
+			Preference:    0.0, // Auto-determined
+		},
+		MergeStrategy:  MergeUnionConservative,
+		MinClusterSize: 1,
+	}
+
+	// Run clustering
+	clustered, _, err := ClusterPatterns(patterns, config)
+	if err != nil {
+		gologger.Warning().Msgf("Clustering failed: %v, using original patterns", err)
+		return patterns
+	}
+
+	return clustered
+}
+
+// selectPatternsByEntropy applies entropy-based pattern selection
+func (o *Orchestrator) selectPatternsByEntropy(patterns []*DSLPattern, allDomains []string) []*DSLPattern {
+	if len(patterns) == 0 {
+		return patterns
+	}
+
+	// Sort by coverage (descending)
+	sorted := make([]*DSLPattern, len(patterns))
+	copy(sorted, patterns)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Coverage > sorted[j].Coverage
+	})
+
+	// Incremental selection with marginal coverage tracking
+	selected := make([]*DSLPattern, 0, o.modeConfig.MaxPatterns)
+	covered := make(map[string]bool)
+
+	totalDomains := len(allDomains)
+
+	for _, pattern := range sorted {
+		// Calculate marginal coverage
+		newCoverage := 0
+		for _, d := range pattern.Domains {
+			if !covered[d] {
+				newCoverage++
+			}
+		}
+
+		marginalGain := float64(newCoverage) / float64(totalDomains)
+
+		// Stop if diminishing returns
+		if marginalGain < o.modeConfig.ElbowSensitivity {
+			if len(selected) >= o.modeConfig.MinPatterns {
+				break
+			}
+		}
+
+		// Stop if coverage goal met
+		currentCoverage := float64(len(covered)) / float64(totalDomains)
+		if currentCoverage >= o.modeConfig.TargetCoverage {
+			if len(selected) >= o.modeConfig.MinPatterns {
+				break
+			}
+		}
+
+		// Add pattern
+		selected = append(selected, pattern)
+		for _, d := range pattern.Domains {
+			covered[d] = true
+		}
+
+		// Stop if max patterns reached
+		if len(selected) >= o.modeConfig.MaxPatterns {
+			break
+		}
+	}
+
+	// Safety floor: ensure minimum patterns
+	if len(selected) < o.modeConfig.MinPatterns && len(sorted) >= o.modeConfig.MinPatterns {
+		selected = sorted[:o.modeConfig.MinPatterns]
+	}
+
+	return selected
+}
+
+// enrichPatterns adds optional variable support
+func (o *Orchestrator) enrichPatterns(patterns []*DSLPattern) []*DSLPattern {
+	enriched := make([]*DSLPattern, len(patterns))
+	copy(enriched, patterns)
+
+	for _, pattern := range enriched {
+		for i := range pattern.Variables {
+			variable := &pattern.Variables[i]
+
+			// Numbers ALWAYS optional
+			if variable.NumberRange != nil {
+				variable.Payloads = []string{""}
+				continue
+			}
+
+			// Semantic modifiers optional based on enrichment rate
+			if o.isSemanticVariable(variable.Name) {
+				if rand.Float64() < o.modeConfig.EnrichmentRate {
+					// Add empty string as first payload
+					variable.Payloads = append([]string{""}, variable.Payloads...)
 				}
 			}
 		}
 	}
 
-	return nil
+	return enriched
+}
+
+// isSemanticVariable checks if variable is semantic
+func (o *Orchestrator) isSemanticVariable(name string) bool {
+	semanticNames := []string{"env", "region", "service", "stage", "tier"}
+	for _, s := range semanticNames {
+		if name == s {
+			return true
+		}
+	}
+	return false
+}
+
+// calculateCoverage calculates coverage ratio
+func (o *Orchestrator) calculateCoverage(patterns []*DSLPattern, allDomains []string) float64 {
+	covered := make(map[string]bool)
+	for _, p := range patterns {
+		for _, d := range p.Domains {
+			covered[d] = true
+		}
+	}
+	return float64(len(covered)) / float64(len(allDomains))
+}
+
+// Helper functions
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+
+func sampleRandom(items []string, n int) []string {
+	if n >= len(items) {
+		return items
+	}
+	indices := rand.Perm(len(items))[:n]
+	result := make([]string, n)
+	for i, idx := range indices {
+		result[i] = items[idx]
+	}
+	return result
 }

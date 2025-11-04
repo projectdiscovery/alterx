@@ -411,7 +411,7 @@ func (dg *DSLGenerator) compressNumberRange(numbers []string) *NumberRange {
 		Start:  minVal,
 		End:    maxVal,
 		Format: formatStr,
-		Step:   1,        // Default step of 1
+		Step:   1,          // Default step of 1
 		Type:   "iterator", // Default type is iterator
 	}
 }
@@ -465,7 +465,6 @@ func (dg *DSLGenerator) expandNumberRangeCount(nr *NumberRange) int {
 	return ((nr.End - nr.Start) / step) + 1
 }
 
-
 // GeneratePatternsFromClosures converts multiple closures into DSL patterns
 // with quality filtering and validation
 func (dg *DSLGenerator) GeneratePatternsFromClosures(closures []*Closure) []*DSLPattern {
@@ -505,10 +504,6 @@ func containsString(slice []string, item string) bool {
 	return false
 }
 
-// calculateConfidenceForPattern is a convenience wrapper
-func calculateConfidenceForPattern(coverage int, ratio float64) float64 {
-	return calculateConfidence(coverage, ratio)
-}
 
 // Additional helper: Update confidence after ratio is calculated
 func (p *DSLPattern) UpdateConfidence() {

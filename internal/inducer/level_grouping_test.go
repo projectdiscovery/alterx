@@ -277,10 +277,10 @@ func TestGroupByLevelCount_EmptyInput(t *testing.T) {
 
 func TestGroupByLevelCount_SkipsRootDomains(t *testing.T) {
 	domains := []string{
-		"api.example.com",       // 1 level - should be included
-		"example.com",           // 0 levels - should be skipped
-		"cdn.example.com",       // 1 level - should be included
-		"projectdiscovery.io",   // 0 levels - should be skipped
+		"api.example.com",     // 1 level - should be included
+		"example.com",         // 0 levels - should be skipped
+		"cdn.example.com",     // 1 level - should be included
+		"projectdiscovery.io", // 0 levels - should be skipped
 	}
 
 	groups, err := GroupByLevelCount(domains)

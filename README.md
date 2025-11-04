@@ -17,6 +17,7 @@
   <a href="#features">Features</a> •
   <a href="#installation">Installation</a> •
   <a href="#help-menu">Usage</a> •
+  <a href="#pattern-induction-new">Pattern Induction</a> •
   <a href="#examples">Running AlterX</a> •
   <a href="https://discord.gg/projectdiscovery">Join Discord</a>
 
@@ -33,8 +34,10 @@
 ## Features
 - Fast and Customizable
 - **Automatic word enrichment**
+- **Pattern Induction** - Learn patterns from passive enumeration (NEW)
 - Pre-defined variables
 - **Configurable Patterns**
+- Multiple execution modes (THOROUGH/BALANCED/FAST)
 - STDIN / List input
 
 ## Installation
@@ -69,10 +72,12 @@ OUTPUT:
    -version            display alterx version
 
 CONFIG:
-   -config string  alterx cli config file (default '$HOME/.config/alterx/config.yaml')
-   -en, -enrich    enrich wordlist by extracting words from input
-   -ac string      alterx permutation config file (default '$HOME/.config/alterx/permutation_v0.0.1.yaml')
-   -limit int      limit the number of results to return (default 0)
+   -config string    alterx cli config file (default '$HOME/.config/alterx/config.yaml')
+   -en, -enrich      enrich wordlist by extracting words from input
+   -an, -analyze     analyze input domains, learn patterns, and output to config file (red team recon mode)
+   -m, -mode string  wordlist generation mode: default, inferred, both (default: default)
+   -ac string        alterx permutation config file (default '$HOME/.config/alterx/permutation_v0.0.6.yaml')
+   -limit int        limit the number of results to return (default 0)
 
 UPDATE:
    -up, -update                 update alterx to latest version
@@ -153,6 +158,56 @@ This configuration file generates subdomain permutations for security assessment
 For example, a user could define a new payload section `env` with values like `prod` and `dev`, then use it in patterns like `{{env}}-{{word}}.{{suffix}}` to generate subdomains like `prod-app.example.com` and `dev-api.example.com`. This flexibility allows tailored subdomain list for unique testing scenarios and target environments.
 
 Default pattern config file used for generation is stored in `$HOME/.config/alterx/` directory, and custom config file can be also used using `-ac` option.
+
+## Pattern Induction (NEW)
+
+> **Inspired by:** AlterX's pattern induction feature is based on the [Regulator](https://github.com/cramppet/regulator) algorithm by @cramppet, with significant optimizations for scalability and real-world subdomain enumeration scenarios.
+
+AlterX can now **automatically learn subdomain patterns** from your passive enumeration results! Instead of relying solely on manual patterns, AlterX analyzes observed subdomains and discovers naming conventions specific to your target.
+
+### Quick Start
+
+**Analyze mode** - Learn patterns from passive subdomain results:
+```bash
+# Learn patterns from passive enumeration
+chaos -d tesla.com | alterx -an -o learned_patterns.yaml
+
+# Or from a file
+alterx -l passive_subs.txt -an -o learned_patterns.yaml
+```
+
+**Inferred mode** - Generate permutations using learned patterns:
+```bash
+# Use learned patterns automatically
+alterx -l seeds.txt -m inferred -o wordlist.txt
+
+# Use both manual and learned patterns
+alterx -l seeds.txt -m both -o wordlist.txt
+```
+
+### How It Works
+
+Pattern induction automatically discovers subdomain naming conventions by:
+1. **Analyzing structure** - Groups subdomains by their structural depth (e.g., `api.example.com` vs `api-v2.prod.example.com`)
+2. **Finding similarities** - Uses edit distance clustering to identify domains with similar patterns
+3. **Extracting templates** - Converts discovered patterns into reusable DSL templates like `{{p0}}-{{p1}}.{{root}}`
+4. **Quality filtering** - Keeps only high-confidence patterns that won't generate excessive noise
+
+The system automatically adapts to dataset size:
+- **Small datasets** (<100 domains): Thorough mode - highest accuracy
+- **Medium datasets** (100-1000 domains): Balanced mode - good speed and accuracy
+- **Large datasets** (>1000 domains): Fast mode - optimized for performance
+
+### When to Use Pattern Induction
+
+- **Target-specific recon**: Learn the specific naming conventions of your target organization
+- **Reduce noise**: Generate focused wordlists instead of millions of generic permutations
+- **Discover trends**: Identify naming patterns you might have missed manually
+- **Automate workflow**: Let the tool discover what works instead of guessing patterns
+
+### Detailed Documentation
+
+For a complete technical walkthrough of how pattern induction works, see [PATTERN_INDUCTION.md](./PATTERN_INDUCTION.md).
 
 ## Examples
 

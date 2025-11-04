@@ -79,7 +79,11 @@ test-cover: ## Run tests with coverage report
 .PHONY: test-inducer
 test-inducer: ## Run tests for the inducer package
 	@echo "$(CYAN)Running inducer tests...$(RESET)"
-	$(GO) test -v ./internal/inducer/... ./inducer/... 2>/dev/null || echo "No inducer package found"
+	@if $(GO) list ./internal/inducer/... ./inducer/... >/dev/null 2>&1; then \
+		$(GO) test -v ./internal/inducer/... ./inducer/...; \
+	else \
+		echo "No inducer package found"; \
+	fi
 
 .PHONY: bench
 bench: ## Run benchmarks

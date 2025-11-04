@@ -36,7 +36,7 @@ func (nc *NumberCompressor) Compress(pattern string) string {
 			continue
 		}
 
-		fullMatch := match[0] // e.g., "(01|02|03)"
+		fullMatch := match[0]  // e.g., "(01|02|03)"
 		innerMatch := match[1] // e.g., "01|02|03"
 
 		// Check if this is a pure number group

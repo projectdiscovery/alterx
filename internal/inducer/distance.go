@@ -130,8 +130,8 @@ func levenshteinDistance(s1, s2 string) int {
 			}
 
 			dp[i][j] = min3(
-				dp[i-1][j]+1,   // deletion
-				dp[i][j-1]+1,   // insertion
+				dp[i-1][j]+1,      // deletion
+				dp[i][j-1]+1,      // insertion
 				dp[i-1][j-1]+cost, // substitution
 			)
 		}
