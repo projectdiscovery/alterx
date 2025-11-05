@@ -3,6 +3,8 @@ module github.com/projectdiscovery/alterx
 go 1.23.0
 
 require (
+	github.com/armon/go-radix v1.0.0
+	github.com/ka-weihe/fast-levenshtein v0.0.0-20201227151214-4c99ee36a1ba
 	github.com/projectdiscovery/fasttemplate v0.0.2
 	github.com/projectdiscovery/goflags v0.1.72
 	github.com/projectdiscovery/gologger v1.1.45

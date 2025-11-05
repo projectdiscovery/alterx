@@ -230,6 +230,15 @@ $ alterx -list tesla.txt -enrich -p '{{word}}-{{year}}.{{suffix}}' -pp word=keyw
 
 **For more information, please checkout the release blog** - https://blog.projectdiscovery.io/introducing-alterx-simplifying-active-subdomain-enumeration-with-patterns/
 
+## Pattern Mining
+
+The pattern mining implementation in this project is based on the [regulator](https://github.com/cramppet/regulator) project by [@cramppet](https://github.com/cramppet). Regulator is a subdomain pattern mining tool that uses hierarchical clustering algorithms to automatically discover patterns in subdomain datasets. We've adapted and extended these concepts to provide automatic pattern generation capabilities within AlterX.
+
+### Attribution
+
+The hierarchical ngram-based clustering approach and pattern mining algorithms are inspired by and adapted from the [regulator project](https://github.com/cramppet/regulator). Special thanks to [@cramppet](https://github.com/cramppet) for the excellent work on subdomain pattern analysis.
+
+---
 
 Do also check out the below similar open-source projects that may fit in your workflow:
 

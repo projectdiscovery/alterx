@@ -40,6 +40,8 @@ type Options struct {
 	Enrich bool
 	// MaxSize limits output data size
 	MaxSize int
+	// Discover tries to discover new pattern based on the input domains
+	Discover bool
 }
 
 // Mutator
@@ -57,27 +59,38 @@ func New(opts *Options) (*Mutator, error) {
 	if len(opts.Domains) == 0 {
 		return nil, fmt.Errorf("no input provided to calculate permutations")
 	}
-	if len(opts.Payloads) == 0 {
-		opts.Payloads = map[string][]string{}
-		if len(DefaultConfig.Payloads) == 0 {
-			return nil, fmt.Errorf("something went wrong, `DefaultWordList` and input wordlist are empty")
+	if !opts.Discover {
+		if len(opts.Payloads) == 0 {
+			opts.Payloads = map[string][]string{}
+			if len(DefaultConfig.Payloads) == 0 {
+				return nil, fmt.Errorf("something went wrong, `DefaultWordList` and input wordlist are empty")
+			}
+			opts.Payloads = DefaultConfig.Payloads
 		}
-		opts.Payloads = DefaultConfig.Payloads
-	}
-	if len(opts.Patterns) == 0 {
-		if len(DefaultConfig.Patterns) == 0 {
-			return nil, fmt.Errorf("something went wrong,`DefaultPatters` and input patterns are empty")
+		if len(opts.Patterns) == 0 {
+			if len(DefaultConfig.Patterns) == 0 {
+				return nil, fmt.Errorf("something went wrong,`DefaultPatters` and input patterns are empty")
+			}
+			opts.Patterns = DefaultConfig.Patterns
 		}
-		opts.Patterns = DefaultConfig.Patterns
-	}
-	// purge duplicates if any
-	for k, v := range opts.Payloads {
-		dedupe := sliceutil.Dedupe(v)
-		if len(v) != len(dedupe) {
-			gologger.Warning().Msgf("%v duplicate payloads found in %v. purging them..", len(v)-len(dedupe), k)
-			opts.Payloads[k] = dedupe
+		// purge duplicates if any
+		for k, v := range opts.Payloads {
+			dedupe := sliceutil.Dedupe(v)
+			if len(v) != len(dedupe) {
+				gologger.Warning().Msgf("%v duplicate payloads found in %v. purging them..", len(v)-len(dedupe), k)
+				opts.Payloads[k] = dedupe
+			}
+		}
+	} else {
+		// make sure domains is given and not empty ( warn against <10 domains)
+		if len(opts.Domains) == 0 {
+			return nil, fmt.Errorf("no input provided to discover patterns")
+		}
+		if len(opts.Domains) < 10 {
+			gologger.Warning().Msgf("discover mode performance may be degraded with less than 10 domains")
 		}
 	}
+
 	m := &Mutator{
 		Options: opts,
 	}
@@ -90,6 +103,7 @@ func New(opts *Options) (*Mutator, error) {
 	if opts.Enrich {
 		m.enrichPayloads()
 	}
+
 	return m, nil
 }
 
