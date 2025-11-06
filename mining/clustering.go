@@ -1,5 +1,10 @@
 package mining
 
+import (
+	"sort"
+	"strings"
+)
+
 // hierarchicalNgramClustering clusters subdomains using a hierarchical approach that combines
 // ngram prefix matching, token extraction, and edit distance clustering.
 //
@@ -51,11 +56,15 @@ func (p *PatternMiner) hierarchicalNgramClustering() error {
 
 // processNgramHierarchy processes a single ngram through the hierarchical clustering pipeline.
 //
-// ALGORITHM:
+// ALGORITHM (matches Python reference):
 // 1. Get all keys matching the ngram prefix
 // 2. Generate pattern from ngram-level keys (Chance 1)
-// 3. Extract first tokens to get unique prefixes
-// 4. Process each prefix level independently
+// 3. Extract first tokens to get unique prefixes (sorted)
+// 4. Process each prefix level with redundancy filtering
+//
+// REDUNDANCY FILTERING (matches Python):
+//   Python: if last is None or not prefix.startswith(last)
+//   Skip prefix if it starts with the previous prefix (redundant)
 func (p *PatternMiner) processNgramHierarchy(ngram string) error {
 	// Step 1: Get all keys (subdomains) starting with this ngram
 	ngramKeys := p.getSubdomainsByPrefix(ngram)
@@ -63,8 +72,8 @@ func (p *PatternMiner) processNgramHierarchy(ngram string) error {
 		return nil
 	}
 
-	// Step 2: Chance 1 - Generate pattern from ALL ngram keys directly
-	p.generatePattern(ngramKeys)
+	// Step 2: Chance 1 - Generate and store pattern from ALL ngram keys directly
+	p.tryGenerateAndStorePattern(ngramKeys)
 
 	// Step 3: Extract first tokens (prefixes) from all keys
 	prefixMap := make(map[string]struct{})
@@ -75,10 +84,36 @@ func (p *PatternMiner) processNgramHierarchy(ngram string) error {
 		}
 	}
 
-	// Step 4: For each unique prefix, process the prefix level
+	// Convert to sorted slice for redundancy filtering
+	// Python: prefixes = sorted(list(set([first_token(k) for k in trie.keys(ngram)])))
+	prefixes := make([]string, 0, len(prefixMap))
 	for prefix := range prefixMap {
-		if err := p.processPrefixLevel(prefix); err != nil {
-			return err
+		prefixes = append(prefixes, prefix)
+	}
+	sort.Strings(prefixes)
+
+	// Step 4: Process each prefix with redundancy filtering
+	// Python: last = None
+	//         if last is None or not prefix.startswith(last):
+	//           if pattern_added:  # Only update last when pattern is actually added!
+	//             last = prefix
+	//         else:
+	//           logging.warning(f"Rejecting redundant prefix: {prefix}")
+	//           continue
+	var last string
+	for _, prefix := range prefixes {
+		// Skip if this prefix starts with the previous one (redundant)
+		if last != "" && strings.HasPrefix(prefix, last) {
+			// Redundant prefix, skip it
+			continue
+		}
+
+		// Process this prefix and check if any pattern was added
+		patternAdded := p.processPrefixLevel(prefix)
+
+		// Only update last if a pattern was actually added (matches Python behavior)
+		if patternAdded {
+			last = prefix
 		}
 	}
 
@@ -87,7 +122,7 @@ func (p *PatternMiner) processNgramHierarchy(ngram string) error {
 
 // processPrefixLevel processes clustering at the prefix level.
 //
-// ALGORITHM:
+// ALGORITHM (matches Python reference):
 // 1. Get all keys matching the prefix
 // 2. Generate pattern from prefix-level keys (Chance 2)
 // 3. If prefix length > 1, perform edit distance clustering (Chance 3)
@@ -95,34 +130,54 @@ func (p *PatternMiner) processNgramHierarchy(ngram string) error {
 // PARAMETERS:
 //
 //	prefix - The first token extracted from hostnames (e.g., "api", "web", "app")
-func (p *PatternMiner) processPrefixLevel(prefix string) error {
+//
+// RETURNS:
+//
+//	bool - true if at least one pattern was added, false otherwise
+func (p *PatternMiner) processPrefixLevel(prefix string) bool {
 	// Step 1: Get all keys starting with this prefix
 	prefixKeys := p.getSubdomainsByPrefix(prefix)
 	if len(prefixKeys) == 0 {
-		return nil
+		return false
 	}
 
-	// Step 2: Chance 2 - Generate pattern from ALL prefix keys directly
-	p.generatePattern(prefixKeys)
+	patternAdded := false
+
+	// Step 2: Chance 2 - Generate and store pattern from ALL prefix keys directly
+	// Python: r = closure_to_regex(args['target'], keys)
+	//         if r not in new_rules and is_good_rule(r, len(keys), ...):
+	//           last = prefix  # Only update last when pattern is added
+	//           new_rules.add(r)
+	if p.tryGenerateAndStorePattern(prefixKeys) {
+		patternAdded = true
+	}
 
 	// Step 3: Chance 3 - If prefix length > 1, do edit distance clustering
+	// Python: if len(prefix) > 1:
 	if len(prefix) > 1 {
 		// For each k value (distance threshold), compute closures
 		for k := p.options.MinLDist; k <= p.options.MaxLDist; k++ {
 			// Get clusters by levenshtein distance on prefix keys only
 			clusters, err := p.getLevenshteinClustersForKeys(prefixKeys, k)
 			if err != nil {
-				return err
+				// Log error but continue processing
+				continue
 			}
 
-			// For each cluster (closure), generate pattern
+			// For each cluster (closure), generate and store pattern
+			// Python: for closure in closures:
+			//           r = closure_to_regex(args['target'], closure)
+			//           if r not in new_rules and is_good_rule(r, len(closure), ...):
+			//             new_rules.add(r)
 			for _, cluster := range clusters {
-				p.generatePattern(cluster)
+				if p.tryGenerateAndStorePattern(cluster) {
+					patternAdded = true
+				}
 			}
 		}
 	}
 
-	return nil
+	return patternAdded
 }
 
 // getSubdomainsByPrefix returns all subdomains that start with the given prefix.
@@ -139,21 +194,32 @@ func (p *PatternMiner) getSubdomainsByPrefix(prefix string) []string {
 	return matches
 }
 
-// levenshteinSubsClustering clusters subdomains by levenshtein distance on subdomain part
+// levenshteinSubsClustering clusters subdomains by levenshtein distance on subdomain part.
+//
+// ALGORITHM (matches Python reference):
+// For each distance threshold k:
+//   1. Get clusters (edit closures) by levenshtein distance
+//   2. For each cluster, generate and store pattern if it passes quality checks
+//
+// This matches Python:
+//   for k in range(args['dist_low'], args['dist_high']):
+//     closures = edit_closures(known_hosts, delta=k)
+//     for closure in closures:
+//       if len(closure) > 1:  # Already filtered in getClustersByLevenshteinDistance
+//         r = closure_to_regex(args['target'], closure)
+//         if r not in new_rules and is_good_rule(r, len(closure), ...):
+//           new_rules.add(r)
 func (p *PatternMiner) levenshteinSubsClustering() error {
-	// get clusters by levenshtein distance starting from
-	// min to max
+	// Get clusters by levenshtein distance starting from min to max
 	for k := p.options.MinLDist; k <= p.options.MaxLDist; k++ {
 		clusters, err := p.getClustersByLevenshteinDistance(k)
 		if err != nil {
 			return err
 		}
+
+		// For each cluster, generate and store pattern
 		for _, cluster := range clusters {
-			// for each cluster
-			// generate single pattern that cluster
-			// validate pattern quality
-			// if quality is good, add to results
-			_ = cluster
+			p.tryGenerateAndStorePattern(cluster)
 		}
 	}
 	return nil

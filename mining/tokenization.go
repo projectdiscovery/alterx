@@ -1,119 +1,214 @@
 package mining
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
-// extractFirstToken extracts the first token from a hostname/subdomain.
-//
-// EXAMPLE:
-//
-//	"api-prod-1" → "api"
-//	"api.prod.1" → "api"
-//	"api_prod_1" → "api"
-//
-// ALGORITHM:
-// 1. Split hostname by common delimiters (-, ., _)
-// 2. Return the first token
-// 3. Handle edge cases (empty strings, single tokens, etc.)
-//
-// TODO: Implement full tokenization logic
-func (p *PatternMiner) extractFirstToken(hostname string) string {
-	// Placeholder: To be implemented
-	// This is the entry point for tokenization
-	// Delegate to actual tokenization logic
-	tokens := p.tokenize(hostname)
-	if len(tokens) == 0 {
-		return ""
-	}
-	return tokens[0]
+// TokenizedSubdomain represents a tokenized subdomain with hierarchical structure.
+type TokenizedSubdomain struct {
+	// Original is the original subdomain string that was tokenized
+	Original string
+	// Levels contains the tokenized levels of the subdomain hierarchy
+	Levels []Level
 }
 
-// tokenize splits a hostname into tokens based on common delimiters.
+// Level represents a single level in the subdomain hierarchy with its tokens.
+// For example, in "api-prod-12.dev", there are two levels:
+//   - Level 0: {Label: "api-prod-12", Tokens: ["api", "-prod", "-12"]}
+//   - Level 1: {Label: "dev", Tokens: ["dev"]}
+type Level struct {
+	// Label is the original label at this level (e.g., "api-prod-12")
+	Label string
+	// Tokens are the individual tokens extracted from the label
+	Tokens []string
+}
+
+// Tokenize converts subdomains into structured tokenized representations.
+// It splits subdomains by dots into hierarchical levels and tokenizes each level
+// by hyphens and numbers while preserving hyphen prefixes.
 //
-// DELIMITERS:
-//   - Hyphen (-)
-//   - Dot (.)
-//   - Underscore (_)
+// NOTE: Input should be subdomain parts only (root domain already removed).
+// For example: "api-prod-12" or "api.dev" (not "api.dev.example.com")
 //
 // EXAMPLE:
 //
-//	"api-prod-1.example.com" → ["api", "prod", "1", "example", "com"]
-//	"web_server_01" → ["web", "server", "01"]
+//	Input:  ["api-prod-12", "web", "api5.dev-staging2"]
+//	Output: []TokenizedSubdomain{
+//	  {
+//	    Original: "api-prod-12",
+//	    Levels: []Level{
+//	      {Label: "api-prod-12", Tokens: []string{"api", "-prod", "-12"}},
+//	    },
+//	  },
+//	  {
+//	    Original: "web",
+//	    Levels: []Level{
+//	      {Label: "web", Tokens: []string{"web"}},
+//	    },
+//	  },
+//	  {
+//	    Original: "api5.dev-staging2",
+//	    Levels: []Level{
+//	      {Label: "api5", Tokens: []string{"api", "5"}},
+//	      {Label: "dev-staging2", Tokens: []string{"dev", "-staging", "2"}},
+//	    },
+//	  },
+//	}
 //
-// TODO: Implement tokenization logic with delimiter handling
-func (p *PatternMiner) tokenize(hostname string) []string {
-	// Placeholder: To be implemented
-	// This should:
-	// 1. Define delimiters
-	// 2. Split by delimiters
-	// 3. Filter empty tokens
-	// 4. Return clean token list
+// ALGORITHM:
+//  1. Split subdomain by '.' to get hierarchical levels
+//  2. For each level, tokenize by hyphens and numbers:
+//     - Split by '-' and prefix subsequent parts with '-'
+//     - Further split by numbers using regex
+//     - Special case: merge standalone '-' with following numbers
+//
+// This preserves the structure needed for pattern mining and clustering.
+func Tokenize(subdomains []string) []TokenizedSubdomain {
+	result := make([]TokenizedSubdomain, 0, len(subdomains))
 
-	// Temporary stub implementation
-	if hostname == "" {
-		return nil
+	for _, subdomain := range subdomains {
+		tokenized := TokenizedSubdomain{
+			Original: subdomain,
+			Levels:   []Level{}, // Initialize to empty slice, not nil
+		}
+
+		// Handle empty subdomains
+		if subdomain == "" {
+			result = append(result, tokenized)
+			continue
+		}
+
+		// Split subdomain by '.' to get hierarchical labels
+		labels := strings.Split(subdomain, ".")
+		tokenized.Levels = make([]Level, 0, len(labels))
+
+		for _, label := range labels {
+			if label == "" {
+				continue
+			}
+			level := Level{
+				Label:  label,
+				Tokens: tokenizeLabel(label),
+			}
+			tokenized.Levels = append(tokenized.Levels, level)
+		}
+
+		result = append(result, tokenized)
 	}
 
-	// Split by common delimiters
-	tokens := splitByDelimiters(hostname, []rune{'-', '.', '_'})
+	return result
+}
+
+// tokenizeLabel tokenizes a single label by splitting on hyphens and numbers.
+//
+// ALGORITHM:
+//  1. Split by '-' and prefix subsequent parts with '-'
+//  2. Split each part by numbers (e.g., "api12" → ["api", "12"])
+//  3. Handle special case: standalone '-' followed by number becomes '-number'
+//
+// EXAMPLE:
+//
+//	"api-prod-12" → ["api", "-prod", "-12"]
+//	"web01" → ["web", "01"]
+//	"foo-12" → ["foo", "-12"]
+func tokenizeLabel(label string) []string {
+	tokens := make([]string, 0)
+
+	// Split by hyphens and prefix subsequent parts with '-'
+	hyphenParts := strings.Split(label, "-")
+	for i, part := range hyphenParts {
+		if part == "" {
+			continue
+		}
+
+		// Prefix with '-' for all parts except the first
+		if i != 0 {
+			part = "-" + part
+		}
+
+		// Split by numbers using regex
+		subtokens := splitByNumbers(part)
+
+		// Handle special case: merge standalone '-' with following number
+		// This happens when we have patterns like "foo-12"
+		filtered := make([]string, 0, len(subtokens))
+		for j, subtoken := range subtokens {
+			if subtoken == "-" && j+1 < len(subtokens) {
+				// If next token exists, merge with it
+				if j+1 < len(subtokens) {
+					subtokens[j+1] = "-" + subtokens[j+1]
+				}
+			} else {
+				filtered = append(filtered, subtoken)
+			}
+		}
+
+		tokens = append(tokens, filtered...)
+	}
 
 	return tokens
 }
 
-// splitByDelimiters splits a string by multiple delimiters.
-//
-// PARAMETERS:
-//   s          - String to split
-//   delimiters - Rune slice of delimiter characters
-//
-// RETURNS:
-//   Slice of non-empty tokens
-//
-// TODO: Implement efficient multi-delimiter splitting
-func splitByDelimiters(s string, delimiters []rune) []string {
-	// Placeholder: To be implemented
-	// This should:
-	// 1. Iterate through string
-	// 2. Split on any delimiter
-	// 3. Filter out empty strings
-	// 4. Return cleaned tokens
+// numberSplitRegex is used to split strings by numeric sequences
+var numberSplitRegex = regexp.MustCompile(`([0-9]+)`)
 
-	// Temporary stub: split by hyphens only as example
-	parts := strings.Split(s, "-")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
+// splitByNumbers splits a string by numeric sequences while keeping the numbers.
+//
+// EXAMPLE:
+//
+//	"api12web34" → ["api", "12", "web", "34"]
+//	"prod" → ["prod"]
+//	"123" → ["123"]
+func splitByNumbers(s string) []string {
+	// Use regex to split by numbers but keep them in the result
+	parts := numberSplitRegex.Split(s, -1)
+	numbers := numberSplitRegex.FindAllString(s, -1)
+
+	result := make([]string, 0, len(parts)+len(numbers))
+
+	// Interleave parts and numbers
+	numIndex := 0
+	for i, part := range parts {
 		if part != "" {
 			result = append(result, part)
 		}
+		// Add the corresponding number if it exists
+		if i < len(parts)-1 && numIndex < len(numbers) {
+			result = append(result, numbers[numIndex])
+			numIndex++
+		}
 	}
+
 	return result
 }
 
-// Token represents a single token from a hostname with metadata.
-// This can be extended in the future to include token type, position, etc.
+// extractFirstToken extracts the first token from a subdomain string.
+// This is used for prefix-based clustering in the pattern mining algorithm.
 //
-// FUTURE EXTENSIONS:
-//   - TokenType (alphabetic, numeric, alphanumeric, etc.)
-//   - Position in hostname
-//   - Original delimiter used
+// EXAMPLE:
 //
-// TODO: Implement Token structure for advanced tokenization
-type Token struct {
-	Value string
-	// Type  TokenType  // To be added
-	// Index int        // To be added
+//	"api-prod-1" → "api"
+//	"web.dev" → "web"
+//	"api5" → "api"
+func (p *PatternMiner) extractFirstToken(subdomain string) string {
+	if subdomain == "" {
+		return ""
+	}
+
+	// Split by '.' to get the first level
+	parts := strings.Split(subdomain, ".")
+	if len(parts) == 0 {
+		return ""
+	}
+
+	// Tokenize the first level
+	tokens := tokenizeLabel(parts[0])
+	if len(tokens) == 0 {
+		return ""
+	}
+
+	// Return the first token, removing any hyphen prefix
+	firstToken := tokens[0]
+	return strings.TrimPrefix(firstToken, "-")
 }
-
-// TokenType represents the type of a token.
-// TODO: Define token types for pattern analysis
-type TokenType int
-
-const (
-	// TokenTypeUnknown represents an unknown token type
-	TokenTypeUnknown TokenType = iota
-	// TokenTypeAlpha represents alphabetic tokens (e.g., "api", "web")
-	TokenTypeAlpha
-	// TokenTypeNumeric represents numeric tokens (e.g., "1", "01", "123")
-	TokenTypeNumeric
-	// TokenTypeAlphanumeric represents mixed tokens (e.g., "api1", "web01")
-	TokenTypeAlphanumeric
-)

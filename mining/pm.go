@@ -22,14 +22,6 @@ var (
 	ErrNoDomains = errkit.New("no domains provided to mine patterns")
 )
 
-// Mined pattern representation in DSL format
-type DSLPattern struct {
-	ID       string                 `json:"id"`
-	Metadata map[string]interface{} `json:"metadata"`
-	Pattern  string                 `json:"pattern"`
-	Payloads map[string][]string    `json:"payloads"`
-}
-
 type Options struct {
 	// MinLDist is the minimum levenshtein distance for clustering
 	MinLDist int
@@ -42,6 +34,9 @@ type Options struct {
 	// after generating patterns from a cluster it is used to discard low quality patterns
 	// whose ratio is greater than this threshold
 	PatternQualityRatio float64
+	// MaxPatternLength is the maximum length of generated pattern string
+	// patterns exceeding this length are discarded
+	MaxPatternLength int
 }
 
 func (o *Options) applyDefaults() {
@@ -57,11 +52,13 @@ func (o *Options) applyDefaults() {
 // PatternMiner is the main struct for pattern mining
 // it mines for patterns for the given domains
 type PatternMiner struct {
-	rootDomains []string
-	subdomains  []string
-	trie        *radix.Tree  // radix tree for fast prefix searches
-	distanceMap map[Edge]int // contains distance betwen two nodes or items
-	options     *Options
+	rootDomains    []string
+	subdomains     []string
+	trie           *radix.Tree            // radix tree for fast prefix searches
+	distanceMap    map[Edge]int           // contains distance betwen two nodes or items
+	options        *Options
+	results        []*DSLPattern          // collected patterns that passed quality checks
+	seenPatterns   map[string]struct{}    // deduplication: tracks pattern strings already generated
 }
 
 // NewPatternMiner creates a new pattern miner instance
@@ -71,9 +68,11 @@ func NewPatternMiner(domains []string, opts *Options) (*PatternMiner, error) {
 	}
 	opts.applyDefaults()
 	p := &PatternMiner{
-		distanceMap: make(map[Edge]int),
-		options:     opts,
-		trie:        radix.New(),
+		distanceMap:  make(map[Edge]int),
+		options:      opts,
+		trie:         radix.New(),
+		results:      make([]*DSLPattern, 0),
+		seenPatterns: make(map[string]struct{}),
 	}
 	if err := p.prepare(domains); err != nil {
 		return nil, err
@@ -124,6 +123,12 @@ func (p *PatternMiner) prepare(domains []string) error {
 		}
 	}
 	return nil
+}
+
+// GetResults returns all patterns that were generated and passed quality checks.
+// This should be called after Execute() completes.
+func (p *PatternMiner) GetResults() []*DSLPattern {
+	return p.results
 }
 
 // Execute mines for patterns from all existing data

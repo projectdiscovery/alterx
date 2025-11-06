@@ -17,3 +17,12 @@ dist
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+# Cross-validation testing (not for upstream)
+mining/cross_validation_test.go
+mining/clustering_cross_validation_test.go
+mining/quality_check_cross_validation_test.go
+mining/hierarchical_cross_validation_test.go
+mining/test_helpers.go
+mining/testData/
+mining/cross_validation/
