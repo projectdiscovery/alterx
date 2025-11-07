@@ -41,15 +41,12 @@ type Options struct {
 	Enrich bool
 	// MaxSize limits output data size
 	MaxSize int
-	// Discover tries to discover new pattern based on the input domains
-	Discover bool
 	// Mode specifies which patterns to use: "default", "discover", or "both"
-	// - "default": use user-specified or default patterns only
+	// - "default": use user-specified or default patterns only (default if not specified)
 	// - "discover": use mined patterns only (no defaults)
-	// - "both": combine mined patterns with defaults
-	// If not set and Discover=true, defaults to "discover"
+	// - "both": combine mined patterns with defaults for maximum coverage
 	Mode string
-	// Mining/Discovery options (used when Discover=true or Mode="discover"/"both")
+	// Mining/Discovery options (used when Mode="discover" or Mode="both")
 	MinLDist            int // minimum levenshtein distance for clustering
 	MaxLDist            int // maximum levenshtein distance for clustering
 	PatternThreshold    int // threshold for filtering low-quality patterns
@@ -77,7 +74,7 @@ func createMiningOptions(opts *Options) *mining.Options {
 		NgramsLimit:         opts.NgramsLimit,
 	}
 
-	// Apply defaults if not set
+	// Apply defaults if not set (matching Python regulator defaults)
 	if miningOpts.MinLDist == 0 {
 		miningOpts.MinLDist = 2
 	}
@@ -85,10 +82,10 @@ func createMiningOptions(opts *Options) *mining.Options {
 		miningOpts.MaxLDist = 5
 	}
 	if miningOpts.PatternThreshold == 0 {
-		miningOpts.PatternThreshold = 1000
+		miningOpts.PatternThreshold = 500 // Python default
 	}
 	if miningOpts.PatternQualityRatio == 0 {
-		miningOpts.PatternQualityRatio = 100
+		miningOpts.PatternQualityRatio = 25 // Python default: max_ratio = 25.0
 	}
 
 	return miningOpts
@@ -100,14 +97,10 @@ func New(opts *Options) (*Mutator, error) {
 		return nil, fmt.Errorf("no input provided to calculate permutations")
 	}
 
-	// Determine mode if not explicitly set
+	// Determine mode - default to "default" if not explicitly set
 	mode := opts.Mode
 	if mode == "" {
-		if opts.Discover {
-			mode = "discover" // -d flag without mode uses discover only (no defaults)
-		} else {
-			mode = "default" // no flags uses default patterns
-		}
+		mode = "default" // use default patterns if mode not specified
 	}
 
 	// Validate mode

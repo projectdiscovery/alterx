@@ -29,7 +29,6 @@ type Options struct {
 	Limit              int
 	MaxSize            int
 	// Mining/Discovery options
-	Discover            bool
 	Mode                string
 	MinLDist            int
 	MaxLDist            int
@@ -69,13 +68,12 @@ func ParseFlags() *Options {
 	)
 
 	flagSet.CreateGroup("mining", "Pattern Mining",
-		flagSet.BoolVarP(&opts.Discover, "discover", "d", false, "discover patterns from input domains (automatic mode)"),
 		flagSet.StringVarP(&opts.Mode, "mode", "m", "", "pattern mode: 'default' (user/default patterns), 'discover' (mined only), 'both' (combined)"),
-		flagSet.IntVar(&opts.MinLDist, "min-distance", 2, "minimum levenshtein distance for clustering (used in discover mode)"),
-		flagSet.IntVar(&opts.MaxLDist, "max-distance", 5, "maximum levenshtein distance for clustering (used in discover mode)"),
-		flagSet.IntVar(&opts.PatternThreshold, "pattern-threshold", 1000, "pattern threshold for filtering low-quality patterns (used in discover mode)"),
-		flagSet.IntVar(&opts.PatternQualityRatio, "quality-ratio", 100, "pattern quality ratio threshold (used in discover mode)"),
-		flagSet.IntVar(&opts.NgramsLimit, "ngrams-limit", 0, "limit number of n-grams to process (0 = all, used in discover mode)"),
+		flagSet.IntVar(&opts.MinLDist, "min-distance", 2, "minimum levenshtein distance for clustering"),
+		flagSet.IntVar(&opts.MaxLDist, "max-distance", 5, "maximum levenshtein distance for clustering"),
+		flagSet.IntVar(&opts.PatternThreshold, "pattern-threshold", 500, "pattern threshold for filtering low-quality patterns"),
+		flagSet.IntVar(&opts.PatternQualityRatio, "quality-ratio", 25, "pattern quality ratio threshold"),
+		flagSet.IntVar(&opts.NgramsLimit, "ngrams-limit", 0, "limit number of n-grams to process (0 = all)"),
 	)
 
 	flagSet.CreateGroup("update", "Update",

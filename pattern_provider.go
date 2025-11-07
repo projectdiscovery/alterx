@@ -2,6 +2,7 @@ package alterx
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/projectdiscovery/alterx/mining"
 	"github.com/projectdiscovery/gologger"
@@ -80,36 +81,33 @@ func (m *MinedPatternProvider) GetPatterns() ([]string, map[string][]string, err
 
 	gologger.Info().Msgf("Discovered %d patterns", len(dslPatterns))
 
-	// Convert DSLPatterns to mutator format
+	// Convert DSLPatterns to mutator format with UNIQUE payload keys per pattern
+	// This prevents cross-contamination when multiple patterns use same key names (e.g., "p0")
+	//
+	// BEFORE (BUGGY): Pattern1="api{{p0}}", Pattern2="web{{p0}}"
+	//                 Merged payloads = {"p0": ["-prod", "-staging", "-dev", "-test"]}
+	//                 Result: BOTH patterns use ALL 4 values → 2x explosion
+	//
+	// AFTER (FIXED): Pattern1="api{{p0_0}}", Pattern2="web{{p0_1}}"
+	//                Payloads = {"p0_0": ["-prod", "-staging"], "p0_1": ["-dev", "-test"]}
+	//                Result: Each pattern uses only its own values → correct output
 	patterns := make([]string, 0, len(dslPatterns))
 	allPayloads := make(map[string][]string)
 
-	for _, dsl := range dslPatterns {
-		// Add pattern (need to append .{{root}} to match mutator expectations)
-		patterns = append(patterns, dsl.Pattern+".{{root}}")
-
-		// Merge payloads from this pattern
-		for key, values := range dsl.Payloads {
-			if existing, ok := allPayloads[key]; ok {
-				// Merge and deduplicate
-				valueSet := make(map[string]struct{})
-				for _, v := range existing {
-					valueSet[v] = struct{}{}
-				}
-				for _, v := range values {
-					valueSet[v] = struct{}{}
-				}
-				// Convert back to slice
-				merged := make([]string, 0, len(valueSet))
-				for v := range valueSet {
-					merged = append(merged, v)
-				}
-				allPayloads[key] = merged
-			} else {
-				// First time seeing this key, just copy values
-				allPayloads[key] = append([]string{}, values...)
-			}
+	for patternIdx, dsl := range dslPatterns {
+		// Create unique payload keys by appending pattern index
+		// Original: "{{p0}}{{p1}}" → Unique: "{{p0_0}}{{p1_0}}"
+		uniquePattern := dsl.Pattern
+		for key := range dsl.Payloads {
+			uniqueKey := fmt.Sprintf("%s_%d", key, patternIdx)
+			// Replace old key with unique key in pattern
+			uniquePattern = strings.ReplaceAll(uniquePattern, "{{"+key+"}}", "{{"+uniqueKey+"}}")
+			// Store payloads with unique key
+			allPayloads[uniqueKey] = append([]string{}, dsl.Payloads[key]...)
 		}
+
+		// Add pattern with unique keys (append .{{root}} to match mutator expectations)
+		patterns = append(patterns, uniquePattern+".{{root}}")
 	}
 
 	gologger.Info().Msgf("Generated %d unique payload keys", len(allPayloads))

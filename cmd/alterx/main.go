@@ -20,7 +20,6 @@ func main() {
 		Limit:               cliOpts.Limit,
 		Enrich:              cliOpts.Enrich, // enrich payloads
 		MaxSize:             cliOpts.MaxSize,
-		Discover:            cliOpts.Discover,
 		Mode:                cliOpts.Mode,
 		MinLDist:            cliOpts.MinLDist,
 		MaxLDist:            cliOpts.MaxLDist,

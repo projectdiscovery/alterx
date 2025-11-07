@@ -109,7 +109,7 @@ func TestMutatorIntegration_ManualMode(t *testing.T) {
 		Payloads: map[string][]string{
 			"word": {"api", "dev"},
 		},
-		Discover: false,
+		Mode: "default",
 	}
 
 	mutator, err := New(opts)
@@ -134,7 +134,7 @@ func TestMutatorIntegration_DiscoverMode(t *testing.T) {
 			"app-v1.example.com",
 			"app-v2.example.com",
 		},
-		Discover: true,
+		Mode: "discover",
 	}
 
 	mutator, err := New(opts)

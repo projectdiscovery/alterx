@@ -26,3 +26,5 @@ mining/hierarchical_cross_validation_test.go
 mining/test_helpers.go
 mining/testData/
 mining/cross_validation/
+/alterx
+/cmd/alterx/alterx

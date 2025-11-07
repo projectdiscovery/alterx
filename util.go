@@ -7,7 +7,7 @@ import (
 	"unsafe"
 )
 
-var varRegex = regexp.MustCompile(`\{\{([a-zA-Z0-9]+)\}\}`)
+var varRegex = regexp.MustCompile(`\{\{([a-zA-Z0-9_]+)\}\}`)
 
 // returns no of variables present in statement
 func getVarCount(data string) int {

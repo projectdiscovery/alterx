@@ -18,6 +18,13 @@ func ClusterBomb(payloads *IndexMap, callback func(varMap map[string]interface{}
 	// step 4) At end of recursion len(Vector) == len(payloads).Cap() - 1
 	// which translates that Vn = {r0,r1,...,rn} and only rn is missing
 	// in this case/situation iterate over all possible values of rn i.e payload.GetNth(n)
+
+	// Debug: Check if payloads is empty
+	if payloads.Cap() == 0 {
+		// No payloads to expand - this will cause pattern to be returned unexpanded
+		return
+	}
+
 	if len(Vector) == payloads.Cap()-1 {
 		// end of vector
 		vectorMap := map[string]interface{}{}
