@@ -55,13 +55,13 @@ func (o *Options) applyDefaults() {
 // PatternMiner is the main struct for pattern mining
 // it mines for patterns for the given domains
 type PatternMiner struct {
-	rootDomains    []string
-	subdomains     []string
-	trie           *radix.Tree            // radix tree for fast prefix searches
-	distanceMap    map[Edge]int           // contains distance betwen two nodes or items
-	options        *Options
-	results        []*DSLPattern          // collected patterns that passed quality checks
-	seenPatterns   map[string]struct{}    // deduplication: tracks pattern strings already generated
+	rootDomains  []string
+	subdomains   []string
+	trie         *radix.Tree  // radix tree for fast prefix searches
+	distanceMap  map[Edge]int // contains distance betwen two nodes or items
+	options      *Options
+	results      []*DSLPattern       // collected patterns that passed quality checks
+	seenPatterns map[string]struct{} // deduplication: tracks pattern strings already generated
 }
 
 // NewPatternMiner creates a new pattern miner instance

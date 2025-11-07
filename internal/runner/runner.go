@@ -29,12 +29,13 @@ type Options struct {
 	Limit              int
 	MaxSize            int
 	// Mining/Discovery options
-	Discover               bool
-	MinLDist               int
-	MaxLDist               int
-	PatternThreshold       int
-	PatternQualityRatio    int
-	NgramsLimit            int
+	Discover            bool
+	Mode                string
+	MinLDist            int
+	MaxLDist            int
+	PatternThreshold    int
+	PatternQualityRatio int
+	NgramsLimit         int
 	// internal/unexported fields
 	wordlists goflags.RuntimeMap
 }
@@ -69,6 +70,7 @@ func ParseFlags() *Options {
 
 	flagSet.CreateGroup("mining", "Pattern Mining",
 		flagSet.BoolVarP(&opts.Discover, "discover", "d", false, "discover patterns from input domains (automatic mode)"),
+		flagSet.StringVarP(&opts.Mode, "mode", "m", "", "pattern mode: 'default' (user/default patterns), 'discover' (mined only), 'both' (combined)"),
 		flagSet.IntVar(&opts.MinLDist, "min-distance", 2, "minimum levenshtein distance for clustering (used in discover mode)"),
 		flagSet.IntVar(&opts.MaxLDist, "max-distance", 5, "maximum levenshtein distance for clustering (used in discover mode)"),
 		flagSet.IntVar(&opts.PatternThreshold, "pattern-threshold", 1000, "pattern threshold for filtering low-quality patterns (used in discover mode)"),

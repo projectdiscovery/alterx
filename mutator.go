@@ -43,7 +43,13 @@ type Options struct {
 	MaxSize int
 	// Discover tries to discover new pattern based on the input domains
 	Discover bool
-	// Mining/Discovery options (used when Discover=true)
+	// Mode specifies which patterns to use: "default", "discover", or "both"
+	// - "default": use user-specified or default patterns only
+	// - "discover": use mined patterns only (no defaults)
+	// - "both": combine mined patterns with defaults
+	// If not set and Discover=true, defaults to "discover"
+	Mode string
+	// Mining/Discovery options (used when Discover=true or Mode="discover"/"both")
 	MinLDist            int // minimum levenshtein distance for clustering
 	MaxLDist            int // maximum levenshtein distance for clustering
 	PatternThreshold    int // threshold for filtering low-quality patterns
@@ -61,78 +67,163 @@ type Mutator struct {
 	maxkeyLenInBytes int
 }
 
+// createMiningOptions creates mining options with defaults applied
+func createMiningOptions(opts *Options) *mining.Options {
+	miningOpts := &mining.Options{
+		MinLDist:            opts.MinLDist,
+		MaxLDist:            opts.MaxLDist,
+		PatternThreshold:    float64(opts.PatternThreshold),
+		PatternQualityRatio: float64(opts.PatternQualityRatio),
+		NgramsLimit:         opts.NgramsLimit,
+	}
+
+	// Apply defaults if not set
+	if miningOpts.MinLDist == 0 {
+		miningOpts.MinLDist = 2
+	}
+	if miningOpts.MaxLDist == 0 {
+		miningOpts.MaxLDist = 5
+	}
+	if miningOpts.PatternThreshold == 0 {
+		miningOpts.PatternThreshold = 1000
+	}
+	if miningOpts.PatternQualityRatio == 0 {
+		miningOpts.PatternQualityRatio = 100
+	}
+
+	return miningOpts
+}
+
 // New creates and returns new mutator instance from options
 func New(opts *Options) (*Mutator, error) {
 	if len(opts.Domains) == 0 {
 		return nil, fmt.Errorf("no input provided to calculate permutations")
 	}
 
-	// Create appropriate pattern provider based on mode
-	var provider PatternProvider
-	if opts.Discover {
-		// Discover mode: mine patterns from input domains
+	// Determine mode if not explicitly set
+	mode := opts.Mode
+	if mode == "" {
+		if opts.Discover {
+			mode = "discover" // -d flag without mode uses discover only (no defaults)
+		} else {
+			mode = "default" // no flags uses default patterns
+		}
+	}
+
+	// Validate mode
+	validModes := map[string]bool{"default": true, "discover": true, "both": true}
+	if !validModes[mode] {
+		return nil, fmt.Errorf("invalid mode '%s': must be 'default', 'discover', or 'both'", mode)
+	}
+
+	// Create appropriate pattern provider(s) based on mode
+	var patterns []string
+	var payloads map[string][]string
+
+	switch mode {
+	case "discover":
+		// Discover mode: mine patterns only (no defaults)
 		if len(opts.Domains) < 10 {
 			gologger.Warning().Msgf("discover mode performance may be degraded with less than 10 domains")
 		}
 
-		// Create mining options from user-provided values (or defaults)
-		miningOpts := &mining.Options{
-			MinLDist:            opts.MinLDist,
-			MaxLDist:            opts.MaxLDist,
-			PatternThreshold:    float64(opts.PatternThreshold),
-			PatternQualityRatio: float64(opts.PatternQualityRatio),
-			NgramsLimit:         opts.NgramsLimit,
+		miningOpts := createMiningOptions(opts)
+		provider := NewMinedPatternProvider(opts.Domains, miningOpts)
+
+		var err error
+		patterns, payloads, err = provider.GetPatterns()
+		if err != nil {
+			return nil, fmt.Errorf("failed to mine patterns: %w", err)
 		}
 
-		// Apply defaults if not set
-		if miningOpts.MinLDist == 0 {
-			miningOpts.MinLDist = 2
-		}
-		if miningOpts.MaxLDist == 0 {
-			miningOpts.MaxLDist = 5
-		}
-		if miningOpts.PatternThreshold == 0 {
-			miningOpts.PatternThreshold = 1000
-		}
-		if miningOpts.PatternQualityRatio == 0 {
-			miningOpts.PatternQualityRatio = 100
-		}
+	case "default":
+		// Default mode: use user-specified or default patterns
+		defaultPatterns := opts.Patterns
+		defaultPayloads := opts.Payloads
 
-		provider = NewMinedPatternProvider(opts.Domains, miningOpts)
-	} else {
-		// Manual mode: use user-provided patterns and payloads
-		if len(opts.Payloads) == 0 {
-			opts.Payloads = map[string][]string{}
+		// Apply defaults if not provided
+		if len(defaultPayloads) == 0 {
 			if len(DefaultConfig.Payloads) == 0 {
 				return nil, fmt.Errorf("something went wrong, `DefaultWordList` and input wordlist are empty")
 			}
-			opts.Payloads = DefaultConfig.Payloads
+			defaultPayloads = DefaultConfig.Payloads
 		}
-		if len(opts.Patterns) == 0 {
+		if len(defaultPatterns) == 0 {
 			if len(DefaultConfig.Patterns) == 0 {
-				return nil, fmt.Errorf("something went wrong,`DefaultPatters` and input patterns are empty")
+				return nil, fmt.Errorf("something went wrong, `DefaultConfig` and input Pattern are empty")
 			}
-			opts.Patterns = DefaultConfig.Patterns
+			defaultPatterns = DefaultConfig.Patterns
 		}
-		// purge duplicates if any
-		for k, v := range opts.Payloads {
+
+		// Deduplicate payloads
+		for k, v := range defaultPayloads {
 			dedupe := sliceutil.Dedupe(v)
 			if len(v) != len(dedupe) {
 				gologger.Warning().Msgf("%v duplicate payloads found in %v. purging them..", len(v)-len(dedupe), k)
-				opts.Payloads[k] = dedupe
+				defaultPayloads[k] = dedupe
 			}
 		}
 
-		provider = NewManualPatternProvider(opts.Patterns, opts.Payloads)
+		patterns = defaultPatterns
+		payloads = defaultPayloads
+
+	case "both":
+		// Both mode: combine mined patterns with defaults
+		if len(opts.Domains) < 10 {
+			gologger.Warning().Msgf("discover mode performance may be degraded with less than 10 domains")
+		}
+
+		// Get mined patterns
+		miningOpts := createMiningOptions(opts)
+		minedProvider := NewMinedPatternProvider(opts.Domains, miningOpts)
+		minedPatterns, minedPayloads, err := minedProvider.GetPatterns()
+		if err != nil {
+			return nil, fmt.Errorf("failed to mine patterns: %w", err)
+		}
+
+		// Get default patterns
+		defaultPatterns := opts.Patterns
+		defaultPayloads := opts.Payloads
+		if len(defaultPayloads) == 0 {
+			defaultPayloads = DefaultConfig.Payloads
+		}
+		if len(defaultPatterns) == 0 {
+			defaultPatterns = DefaultConfig.Patterns
+		}
+
+		// Combine patterns (mined + default, deduplicated)
+		patternSet := make(map[string]struct{})
+		for _, p := range minedPatterns {
+			patternSet[p] = struct{}{}
+		}
+		for _, p := range defaultPatterns {
+			patternSet[p] = struct{}{}
+		}
+		patterns = make([]string, 0, len(patternSet))
+		for p := range patternSet {
+			patterns = append(patterns, p)
+		}
+
+		// Combine payloads (merge maps)
+		payloads = make(map[string][]string)
+		for k, v := range minedPayloads {
+			payloads[k] = v
+		}
+		for k, v := range defaultPayloads {
+			if existing, ok := payloads[k]; ok {
+				// Merge and deduplicate
+				combined := append(existing, v...)
+				payloads[k] = sliceutil.Dedupe(combined)
+			} else {
+				payloads[k] = v
+			}
+		}
+
+		gologger.Info().Msgf("Combined mode: %d mined + %d default = %d total patterns",
+			len(minedPatterns), len(defaultPatterns), len(patterns))
 	}
 
-	// Get patterns and payloads from provider
-	patterns, payloads, err := provider.GetPatterns()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get patterns: %w", err)
-	}
-
-	// Update options with patterns and payloads from provider
+	// Update options with final patterns and payloads
 	opts.Patterns = patterns
 	opts.Payloads = payloads
 

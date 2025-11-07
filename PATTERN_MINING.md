@@ -23,20 +23,44 @@ All pattern mining options are grouped under the **"Pattern Mining"** flag group
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-d, -discover` | `false` | Enable discover mode (automatic pattern mining) |
+| `-m, -mode` | `""` | Pattern mode: `default`, `discover`, or `both` |
 | `-min-distance` | `2` | Minimum levenshtein distance for clustering |
 | `-max-distance` | `5` | Maximum levenshtein distance for clustering |
 | `-pattern-threshold` | `1000` | Pattern threshold for filtering low-quality patterns |
 | `-quality-ratio` | `100` | Pattern quality ratio threshold |
 | `-ngrams-limit` | `0` | Limit number of n-grams to process (0 = all) |
 
+#### Pattern Modes
+
+The `-mode` flag controls which patterns are used:
+
+- **`default`**: Use user-specified or default patterns only (traditional behavior)
+- **`discover`**: Use only mined patterns from input domains (no defaults)
+- **`both`**: Combine mined patterns with defaults for maximum coverage
+
+**Note**: When using `-d` without specifying `-mode`, it defaults to `discover` mode (mined patterns only, no defaults).
+
 ### Examples
 
-**1. Basic discover mode:**
+**1. Basic discover mode (mined patterns only):**
 ```bash
+# -d flag defaults to discover mode (no default patterns)
 alterx -l subdomains.txt -d -limit 50
 ```
 
-**2. Custom mining parameters:**
+**2. Combine mined patterns with defaults:**
+```bash
+# Use -mode both to get maximum coverage
+alterx -l subdomains.txt -d -mode both -limit 100
+```
+
+**3. Explicitly use only default patterns:**
+```bash
+# Use -mode default for traditional behavior
+alterx -l subdomains.txt -mode default -limit 50
+```
+
+**4. Custom mining parameters:**
 ```bash
 alterx -l subdomains.txt -d \
   -min-distance 3 \
@@ -46,13 +70,13 @@ alterx -l subdomains.txt -d \
   -limit 100
 ```
 
-**3. Fast mode (limit n-grams):**
+**5. Fast mode (limit n-grams):**
 ```bash
 # Process only first 100 n-grams for faster results
 alterx -l subdomains.txt -d -ngrams-limit 100
 ```
 
-**4. Discover and save to file:**
+**6. Discover and save to file:**
 ```bash
 alterx -l subdomains.txt -d -o permutations.txt
 ```

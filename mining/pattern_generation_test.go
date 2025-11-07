@@ -16,33 +16,33 @@ func TestGeneratePattern(t *testing.T) {
 		checkPayloads      map[string][]string
 	}{
 		{
-			name:            "simple static pattern",
-			subdomains:      []string{"api", "api", "api"},
-			expectedPattern: "api",
+			name:               "simple static pattern",
+			subdomains:         []string{"api", "api", "api"},
+			expectedPattern:    "api",
 			expectedPayloadLen: 0,
 		},
 		{
-			name:            "single level with variable",
-			subdomains:      []string{"api-prod", "api-staging"},
-			expectedPattern: "api{{p0}}",
+			name:               "single level with variable",
+			subdomains:         []string{"api-prod", "api-staging"},
+			expectedPattern:    "api{{p0}}",
 			expectedPayloadLen: 1,
 			checkPayloads: map[string][]string{
 				"p0": {"-prod", "-staging"},
 			},
 		},
 		{
-			name:            "single level with number variation",
-			subdomains:      []string{"api-1", "api-2", "api-3"},
-			expectedPattern: "api{{p0}}",
+			name:               "single level with number variation",
+			subdomains:         []string{"api-1", "api-2", "api-3"},
+			expectedPattern:    "api{{p0}}",
 			expectedPayloadLen: 1,
 			checkPayloads: map[string][]string{
 				"p0": {"-1", "-2", "-3"},
 			},
 		},
 		{
-			name:            "complex single level",
-			subdomains:      []string{"api-prod-1", "api-prod-2", "api-staging-1"},
-			expectedPattern: "api{{p0}}{{p1}}",
+			name:               "complex single level",
+			subdomains:         []string{"api-prod-1", "api-prod-2", "api-staging-1"},
+			expectedPattern:    "api{{p0}}{{p1}}",
 			expectedPayloadLen: 2,
 			checkPayloads: map[string][]string{
 				"p0": {"-prod", "-staging"},
@@ -50,18 +50,18 @@ func TestGeneratePattern(t *testing.T) {
 			},
 		},
 		{
-			name:            "multi-level simple",
-			subdomains:      []string{"api.dev", "api.prod"},
-			expectedPattern: "api.{{p0}}",
+			name:               "multi-level simple",
+			subdomains:         []string{"api.dev", "api.prod"},
+			expectedPattern:    "api.{{p0}}",
 			expectedPayloadLen: 1,
 			checkPayloads: map[string][]string{
 				"p0": {"dev", "prod"},
 			},
 		},
 		{
-			name:            "multi-level complex",
-			subdomains:      []string{"api-1.dev", "api-2.dev", "api-1.prod"},
-			expectedPattern: "api{{p0}}.{{p1}}",
+			name:               "multi-level complex",
+			subdomains:         []string{"api-1.dev", "api-2.dev", "api-1.prod"},
+			expectedPattern:    "api{{p0}}.{{p1}}",
 			expectedPayloadLen: 2,
 			checkPayloads: map[string][]string{
 				"p0": {"-1", "-2"},
@@ -69,9 +69,9 @@ func TestGeneratePattern(t *testing.T) {
 			},
 		},
 		{
-			name:            "with numbers",
-			subdomains:      []string{"web01", "web02", "web03"},
-			expectedPattern: "web{{p0}}",
+			name:               "with numbers",
+			subdomains:         []string{"web01", "web02", "web03"},
+			expectedPattern:    "web{{p0}}",
 			expectedPayloadLen: 1,
 			checkPayloads: map[string][]string{
 				"p0": {"01", "02", "03"},
@@ -270,11 +270,11 @@ func TestBuildDSLPattern(t *testing.T) {
 
 func TestExtractPayloads(t *testing.T) {
 	tests := []struct {
-		name            string
-		levelPositions  []LevelPosition
-		subdomains      []string
-		expectedPayloads map[string]int // varName -> count of unique values
-		checkContains   map[string][]string // varName -> values that must be present
+		name             string
+		levelPositions   []LevelPosition
+		subdomains       []string
+		expectedPayloads map[string]int      // varName -> count of unique values
+		checkContains    map[string][]string // varName -> values that must be present
 	}{
 		{
 			name: "single variable",

@@ -14,26 +14,31 @@ type DSLPattern struct {
 	Payloads map[string][]string    `json:"payloads"`
 }
 
-// generatePattern generates a simplified DSL pattern from a set of subdomain strings.
+// generatePattern generates a DSL pattern from a set of subdomain strings using tokenization.
 //
-// SIMPLIFIED ALGORITHM (matches Python reference):
-// 1. Sort the subdomains for consistency
-// 2. Find the common prefix across all subdomains
-// 3. If common prefix exists: return "{common}{{p0}}"
-// 4. If no common prefix: return "{{p0}}"
+// ALGORITHM (matches Python reference implementation):
+// 1. Tokenize subdomains into hierarchical tokens
+// 2. Analyze token alignment to classify positions as static/variable
+// 3. Build DSL pattern string from alignment analysis
+// 4. Extract payload values for variable positions
+// 5. Apply quality checks
 //
-// EXAMPLE:
+// EXAMPLES:
 //
 //	Input:  ["api-prod", "api-staging"]
+//	Tokenized: [["api", "-prod"], ["api", "-staging"]]
+//	Analysis: Position 0 = static("api"), Position 1 = variable(["-prod", "-staging"])
 //	Output: DSLPattern{
-//	  Pattern: "api-{{p0}}",
-//	  Payloads: {"p0": ["prod", "staging"]}
+//	  Pattern: "api{{p0}}",
+//	  Payloads: {"p0": ["-prod", "-staging"]}
 //	}
 //
-//	Input:  ["web", "api", "app"]
+//	Input:  ["api-prod-1", "api-prod-2", "api-staging-1"]
+//	Tokenized: [["api", "-prod", "-1"], ["api", "-prod", "-2"], ["api", "-staging", "-1"]]
+//	Analysis: pos0=static("api"), pos1=variable(["-prod","-staging"]), pos2=variable(["-1","-2"])
 //	Output: DSLPattern{
-//	  Pattern: "{{p0}}",
-//	  Payloads: {"p0": ["api", "app", "web"]}
+//	  Pattern: "api{{p0}}{{p1}}",
+//	  Payloads: {"p0": ["-prod", "-staging"], "p1": ["-1", "-2"]}
 //	}
 //
 // RETURNS:
@@ -44,7 +49,7 @@ func (p *PatternMiner) generatePattern(subdomains []string) (*DSLPattern, error)
 		return nil, nil
 	}
 
-	// Single subdomain - return as-is
+	// Single subdomain - return as-is (static pattern)
 	if len(subdomains) == 1 {
 		return &DSLPattern{
 			Pattern:  subdomains[0],
@@ -76,71 +81,36 @@ func (p *PatternMiner) generatePattern(subdomains []string) (*DSLPattern, error)
 		}, nil
 	}
 
-	// Find common prefix length across all subdomains
-	first := sorted[0]
-	commonLen := 0
-	for i := 0; i < len(first); i++ {
-		allMatch := true
-		for _, s := range sorted {
-			if i >= len(s) || s[i] != first[i] {
-				allMatch = false
-				break
-			}
-		}
-		if allMatch {
-			commonLen = i + 1
-		} else {
-			break
-		}
-	}
+	// STEP 1: Tokenize subdomains into hierarchical structure
+	tokenized := Tokenize(sorted)
 
-	var pattern string
-	var payloads map[string][]string
+	// STEP 2: Analyze token alignment across all subdomains
+	// This classifies each position as static (same value) or variable (different values)
+	levelPositions := p.analyzeTokenAlignment(tokenized)
 
-	if commonLen > 0 {
-		// Has common prefix
-		common := first[:commonLen]
-		pattern = common + "{{p0}}"
+	// STEP 3: Build DSL pattern string from alignment analysis
+	// Static positions become literals, variable positions become {{p0}}, {{p1}}, etc.
+	pattern := p.buildDSLPattern(levelPositions)
 
-		// Extract suffixes as payload
-		suffixes := make(map[string]struct{})
-		for _, s := range sorted {
-			suffix := s[commonLen:]
-			suffixes[suffix] = struct{}{}
-		}
+	// STEP 4: Extract payload values for each variable position
+	// Creates map of variable_name → []possible_values
+	payloads := p.extractPayloads(levelPositions, tokenized)
 
-		// Convert to sorted slice
-		payloadValues := make([]string, 0, len(suffixes))
-		for suffix := range suffixes {
-			payloadValues = append(payloadValues, suffix)
-		}
-		sort.Strings(payloadValues)
-
-		payloads = map[string][]string{
-			"p0": payloadValues,
-		}
-	} else {
-		// No common prefix
-		pattern = "{{p0}}"
-
-		// All subdomains become payload
-		payloads = map[string][]string{
-			"p0": sorted,
-		}
-	}
-
+	// Create DSL pattern structure
 	dslPattern := &DSLPattern{
 		Pattern:  pattern,
 		Payloads: payloads,
 		Metadata: make(map[string]interface{}),
 	}
 
+	// STEP 5: Quality checks
+
 	// Max length check
 	if p.options.MaxPatternLength > 0 && len(pattern) > p.options.MaxPatternLength {
 		return nil, nil
 	}
 
-	// Quality check
+	// Pattern quality check (threshold and ratio)
 	if !p.isGoodPattern(dslPattern, len(subdomains)) {
 		return nil, nil
 	}
@@ -163,20 +133,23 @@ func (p *PatternMiner) generatePattern(subdomains []string) (*DSLPattern, error)
 // SPECIAL CASE EXAMPLES:
 //
 // Example 1 - Optional Position:
-//   Input: ["api-prod", "api"]
-//   Level 0, Position 1: only "api-prod" has "-prod" → Position 1 is OPTIONAL
-//   Result: pattern "api{{p0}}", payloads: {"p0": ["-prod", ""]}
+//
+//	Input: ["api-prod", "api"]
+//	Level 0, Position 1: only "api-prod" has "-prod" → Position 1 is OPTIONAL
+//	Result: pattern "api{{p0}}", payloads: {"p0": ["-prod", ""]}
 //
 // Example 2 - Optional Level:
-//   Input: ["api.dev", "api"]
-//   Level 1: only "api.dev" has "dev" → Level 1 is OPTIONAL
-//   Result: pattern "api.{{p0}}", payloads: {"p0": ["dev", ""]}
+//
+//	Input: ["api.dev", "api"]
+//	Level 1: only "api.dev" has "dev" → Level 1 is OPTIONAL
+//	Result: pattern "api.{{p0}}", payloads: {"p0": ["dev", ""]}
 //
 // Example 3 - Variable Position:
-//   Input: ["api-prod-1", "api-staging-2"]
-//   Level 0, Position 1: has {"-prod", "-staging"} → VARIABLE
-//   Level 0, Position 2: has {"-1", "-2"} → VARIABLE
-//   Result: pattern "api{{p0}}{{p1}}"
+//
+//	Input: ["api-prod-1", "api-staging-2"]
+//	Level 0, Position 1: has {"-prod", "-staging"} → VARIABLE
+//	Level 0, Position 2: has {"-1", "-2"} → VARIABLE
+//	Result: pattern "api{{p0}}{{p1}}"
 //
 // RETURNS: []LevelPosition with classification and optionality metadata
 func (p *PatternMiner) analyzeTokenAlignment(tokenized []TokenizedSubdomain) []LevelPosition {
@@ -205,7 +178,7 @@ func (p *PatternMiner) analyzeTokenAlignment(tokenized []TokenizedSubdomain) []L
 					levels[levelIdx][posIdx] = make(map[string]struct{})
 					optional[levelIdx][posIdx] = []string{}
 				}
-				levels[levelIdx][posIdx][token] = struct{}{}          // unique values
+				levels[levelIdx][posIdx][token] = struct{}{}                           // unique values
 				optional[levelIdx][posIdx] = append(optional[levelIdx][posIdx], token) // all occurrences
 			}
 		}
@@ -293,9 +266,9 @@ type TokenPosition struct {
 
 // LevelPosition represents all token positions within a single hierarchical level.
 type LevelPosition struct {
-	LevelIndex int              // Index of this level in the hierarchy (0 = leftmost subdomain part)
-	Positions  []TokenPosition  // Token positions within this level
-	IsOptional bool             // Whether this entire level is optional
+	LevelIndex int             // Index of this level in the hierarchy (0 = leftmost subdomain part)
+	Positions  []TokenPosition // Token positions within this level
+	IsOptional bool            // Whether this entire level is optional
 }
 
 // TokenPositionType indicates whether a token position is static or variable.
@@ -352,28 +325,31 @@ func (p *PatternMiner) buildDSLPattern(levelPositions []LevelPosition) string {
 // extractPayloads extracts payload values for each variable in the pattern.
 //
 // ALGORITHM:
-// 1. For each variable position in the pattern
-// 2. Collect all unique values seen at that position
-// 3. IMPORTANT: Add empty string "" if position is optional
-//    (this allows the variable to be omitted when generating domains)
-// 4. Build a map of variable_name → []values
+//  1. For each variable position in the pattern
+//  2. Collect all unique values seen at that position
+//  3. IMPORTANT: Add empty string "" if position is optional
+//     (this allows the variable to be omitted when generating domains)
+//  4. Build a map of variable_name → []values
 //
 // EXAMPLES:
 //
 // Example 1 - Required positions:
-//   Pattern: "api{{p0}}{{p1}}"
-//   Subdomains: ["api-prod-1", "api-prod-2", "api-staging-1"]
-//   Output: {"p0": ["-prod", "-staging"], "p1": ["-1", "-2"]}
+//
+//	Pattern: "api{{p0}}{{p1}}"
+//	Subdomains: ["api-prod-1", "api-prod-2", "api-staging-1"]
+//	Output: {"p0": ["-prod", "-staging"], "p1": ["-1", "-2"]}
 //
 // Example 2 - Optional position:
-//   Pattern: "api{{p0}}"
-//   Subdomains: ["api-prod", "api"]  (second one lacks "-prod")
-//   Output: {"p0": ["-prod", ""]}  ← Note: "" allows generation of "api"
+//
+//	Pattern: "api{{p0}}"
+//	Subdomains: ["api-prod", "api"]  (second one lacks "-prod")
+//	Output: {"p0": ["-prod", ""]}  ← Note: "" allows generation of "api"
 //
 // Example 3 - Optional level:
-//   Pattern: "api.{{p0}}"
-//   Subdomains: ["api.dev", "api"]  (second one lacks .dev level)
-//   Output: {"p0": ["dev", ""]}  ← Note: "" allows generation of "api"
+//
+//	Pattern: "api.{{p0}}"
+//	Subdomains: ["api.dev", "api"]  (second one lacks .dev level)
+//	Output: {"p0": ["dev", ""]}  ← Note: "" allows generation of "api"
 func (p *PatternMiner) extractPayloads(levelPositions []LevelPosition, tokenized []TokenizedSubdomain) map[string][]string {
 	payloads := make(map[string][]string)
 
@@ -418,9 +394,10 @@ func (p *PatternMiner) extractPayloads(levelPositions []LevelPosition, tokenized
 //  3. Return true if pattern was generated and stored
 //
 // This implements the Python pattern generation and storage flow:
-//   r = closure_to_regex(args['target'], closure)
-//   if r not in new_rules and is_good_rule(r, len(closure), ...):
-//     new_rules.add(r)
+//
+//	r = closure_to_regex(args['target'], closure)
+//	if r not in new_rules and is_good_rule(r, len(closure), ...):
+//	  new_rules.add(r)
 func (p *PatternMiner) tryGenerateAndStorePattern(subdomains []string) bool {
 	// Generate pattern (includes quality checks)
 	pattern, err := p.generatePattern(subdomains)
@@ -440,8 +417,9 @@ func (p *PatternMiner) tryGenerateAndStorePattern(subdomains []string) bool {
 //  3. Return true if stored, false if duplicate
 //
 // This implements the Python pattern storage logic:
-//   if r not in new_rules:
-//     new_rules.add(r)
+//
+//	if r not in new_rules:
+//	  new_rules.add(r)
 func (p *PatternMiner) storePattern(pattern *DSLPattern) bool {
 	if pattern == nil {
 		return false
@@ -475,15 +453,16 @@ func (p *PatternMiner) storePattern(pattern *DSLPattern) bool {
 //   - nkeys: Number of input subdomains used to generate this pattern
 //
 // EXAMPLE:
-//   Pattern: "api{{p0}}.{{p1}}" with payloads {p0: ["-prod", "-staging"], p1: ["dev", "staging"]}
-//   nwords = 2 × 2 = 4 combinations
-//   nkeys = 2 (original subdomains)
-//   ratio = 4/2 = 2.0
 //
-//   If threshold=100 and max_ratio=10:
-//     - 4 < 100 ✓ (passes absolute check)
-//     - 2.0 < 10 ✓ (passes ratio check)
-//     → Pattern is GOOD
+//	Pattern: "api{{p0}}.{{p1}}" with payloads {p0: ["-prod", "-staging"], p1: ["dev", "staging"]}
+//	nwords = 2 × 2 = 4 combinations
+//	nkeys = 2 (original subdomains)
+//	ratio = 4/2 = 2.0
+//
+//	If threshold=100 and max_ratio=10:
+//	  - 4 < 100 ✓ (passes absolute check)
+//	  - 2.0 < 10 ✓ (passes ratio check)
+//	  → Pattern is GOOD
 //
 // RETURNS:
 //   - true if pattern meets quality criteria
@@ -513,18 +492,20 @@ func (p *PatternMiner) isGoodPattern(pattern *DSLPattern, nkeys int) bool {
 // calculateCombinations calculates total number of output combinations for a DSL pattern.
 //
 // ALGORITHM:
-//   Total combinations = product of all payload lengths (clusterbomb multiplication)
+//
+//	Total combinations = product of all payload lengths (clusterbomb multiplication)
 //
 // EXAMPLE:
-//   Pattern: "api{{p0}}.{{p1}}"
-//   Payloads: {p0: ["-prod", "-staging", "-dev"], p1: ["us", "eu"]}
-//   Total = 3 × 2 = 6 combinations:
-//     - api-prod.us
-//     - api-prod.eu
-//     - api-staging.us
-//     - api-staging.eu
-//     - api-dev.us
-//     - api-dev.eu
+//
+//	Pattern: "api{{p0}}.{{p1}}"
+//	Payloads: {p0: ["-prod", "-staging", "-dev"], p1: ["us", "eu"]}
+//	Total = 3 × 2 = 6 combinations:
+//	  - api-prod.us
+//	  - api-prod.eu
+//	  - api-staging.us
+//	  - api-staging.eu
+//	  - api-dev.us
+//	  - api-dev.eu
 //
 // RETURNS:
 //   - Total number of possible combinations

@@ -121,9 +121,9 @@ func TestGenerateValidNgrams_Examples(t *testing.T) {
 	unigrams, bigrams := GenerateValidNgrams()
 
 	testCases := []struct {
-		name     string
-		ngram    string
-		isValid  bool
+		name      string
+		ngram     string
+		isValid   bool
 		isUnigram bool
 	}{
 		// Valid unigrams

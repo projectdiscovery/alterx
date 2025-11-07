@@ -70,8 +70,9 @@ func (p *PatternMiner) hierarchicalNgramClustering() error {
 // 4. Process each prefix level with redundancy filtering
 //
 // REDUNDANCY FILTERING (matches Python):
-//   Python: if last is None or not prefix.startswith(last)
-//   Skip prefix if it starts with the previous prefix (redundant)
+//
+//	Python: if last is None or not prefix.startswith(last)
+//	Skip prefix if it starts with the previous prefix (redundant)
 func (p *PatternMiner) processNgramHierarchy(ngram string) error {
 	// Step 1: Get all keys (subdomains) starting with this ngram
 	ngramKeys := p.getSubdomainsByPrefix(ngram)
@@ -201,17 +202,18 @@ func (p *PatternMiner) getSubdomainsByPrefix(prefix string) []string {
 //
 // ALGORITHM (matches Python reference):
 // For each distance threshold k:
-//   1. Get clusters (edit closures) by levenshtein distance
-//   2. For each cluster, generate and store pattern if it passes quality checks
+//  1. Get clusters (edit closures) by levenshtein distance
+//  2. For each cluster, generate and store pattern if it passes quality checks
 //
 // This matches Python:
-//   for k in range(args['dist_low'], args['dist_high']):
-//     closures = edit_closures(known_hosts, delta=k)
-//     for closure in closures:
-//       if len(closure) > 1:  # Already filtered in getClustersByLevenshteinDistance
-//         r = closure_to_regex(args['target'], closure)
-//         if r not in new_rules and is_good_rule(r, len(closure), ...):
-//           new_rules.add(r)
+//
+//	for k in range(args['dist_low'], args['dist_high']):
+//	  closures = edit_closures(known_hosts, delta=k)
+//	  for closure in closures:
+//	    if len(closure) > 1:  # Already filtered in getClustersByLevenshteinDistance
+//	      r = closure_to_regex(args['target'], closure)
+//	      if r not in new_rules and is_good_rule(r, len(closure), ...):
+//	        new_rules.add(r)
 func (p *PatternMiner) levenshteinSubsClustering() error {
 	// Get clusters by levenshtein distance starting from min to max
 	for k := p.options.MinLDist; k <= p.options.MaxLDist; k++ {

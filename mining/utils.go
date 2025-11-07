@@ -37,17 +37,20 @@ func clustersEqual_internal(a, b map[string]struct{}) bool {
 // - Second character can be: letter, digit, OR hyphen
 //
 // EXAMPLES:
-//   Valid prefixes:   a, z, 0, 9, ab, a1, 1a, a-, 0-, api, web-
-//   Invalid prefixes: -, -a, -0 (cannot start with hyphen)
+//
+//	Valid prefixes:   a, z, 0, 9, ab, a1, 1a, a-, 0-, api, web-
+//	Invalid prefixes: -, -a, -0 (cannot start with hyphen)
 //
 // USE CASES:
-//   "a"  matches: api.com, app.com, about.com
-//   "a-" matches: a-one.com, a-test.com, a-api.com
-//   "ab" matches: about.com, abc.com, abstract.com
+//
+//	"a"  matches: api.com, app.com, about.com
+//	"a-" matches: a-one.com, a-test.com, a-api.com
+//	"ab" matches: about.com, abc.com, abstract.com
 //
 // RETURNS:
-//   unigrams: All valid single-character prefixes (a-z, A-Z, 0-9)
-//   bigrams:  All valid two-character prefixes following RFC rules
+//
+//	unigrams: All valid single-character prefixes (a-z, A-Z, 0-9)
+//	bigrams:  All valid two-character prefixes following RFC rules
 func GenerateValidNgrams() (unigrams []string, bigrams []string) {
 	// Valid characters for subdomain labels
 	letters := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
