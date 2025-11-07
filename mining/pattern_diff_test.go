@@ -28,12 +28,13 @@ func analyzePatternDifferences(t *testing.T, domains []string) {
 	// Run Python pattern generation
 	pythonPatterns := runPythonHierarchicalPatterns(t, domains, 2, 5, 1000, 100, 100)
 
-	// Run Go pattern generation
+	// Run Go pattern generation (with same ngram limit as Python test)
 	pm, err := NewPatternMiner(domains, &Options{
 		MinLDist:            2,
 		MaxLDist:            5,
 		PatternThreshold:    1000,
 		PatternQualityRatio: 100,
+		NgramsLimit:         100, // Match Python's ngrams_limit parameter
 	})
 	require.NoError(t, err)
 

@@ -28,6 +28,13 @@ type Options struct {
 	Enrich             bool
 	Limit              int
 	MaxSize            int
+	// Mining/Discovery options
+	Discover               bool
+	MinLDist               int
+	MaxLDist               int
+	PatternThreshold       int
+	PatternQualityRatio    int
+	NgramsLimit            int
 	// internal/unexported fields
 	wordlists goflags.RuntimeMap
 }
@@ -58,6 +65,15 @@ func ParseFlags() *Options {
 		flagSet.BoolVarP(&opts.Enrich, "enrich", "en", false, "enrich wordlist by extracting words from input"),
 		flagSet.StringVar(&opts.PermutationConfig, "ac", "", fmt.Sprintf(`alterx permutation config file (default '$HOME/.config/alterx/permutation_%v.yaml')`, version)),
 		flagSet.IntVar(&opts.Limit, "limit", 0, "limit the number of results to return (default 0)"),
+	)
+
+	flagSet.CreateGroup("mining", "Pattern Mining",
+		flagSet.BoolVarP(&opts.Discover, "discover", "d", false, "discover patterns from input domains (automatic mode)"),
+		flagSet.IntVar(&opts.MinLDist, "min-distance", 2, "minimum levenshtein distance for clustering (used in discover mode)"),
+		flagSet.IntVar(&opts.MaxLDist, "max-distance", 5, "maximum levenshtein distance for clustering (used in discover mode)"),
+		flagSet.IntVar(&opts.PatternThreshold, "pattern-threshold", 1000, "pattern threshold for filtering low-quality patterns (used in discover mode)"),
+		flagSet.IntVar(&opts.PatternQualityRatio, "quality-ratio", 100, "pattern quality ratio threshold (used in discover mode)"),
+		flagSet.IntVar(&opts.NgramsLimit, "ngrams-limit", 0, "limit number of n-grams to process (0 = all, used in discover mode)"),
 	)
 
 	flagSet.CreateGroup("update", "Update",

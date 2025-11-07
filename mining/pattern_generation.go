@@ -58,6 +58,24 @@ func (p *PatternMiner) generatePattern(subdomains []string) (*DSLPattern, error)
 	copy(sorted, subdomains)
 	sort.Strings(sorted)
 
+	// Check if all subdomains are identical
+	allSame := true
+	for _, s := range sorted[1:] {
+		if s != sorted[0] {
+			allSame = false
+			break
+		}
+	}
+
+	// If all subdomains are identical, return as static pattern (no variables)
+	if allSame {
+		return &DSLPattern{
+			Pattern:  sorted[0],
+			Payloads: make(map[string][]string),
+			Metadata: make(map[string]interface{}),
+		}, nil
+	}
+
 	// Find common prefix length across all subdomains
 	first := sorted[0]
 	commonLen := 0
@@ -106,13 +124,8 @@ func (p *PatternMiner) generatePattern(subdomains []string) (*DSLPattern, error)
 		pattern = "{{p0}}"
 
 		// All subdomains become payload
-		payloadValues := make([]string, 0, len(sorted))
-		for _, s := range sorted {
-			payloadValues = append(payloadValues, s)
-		}
-
 		payloads = map[string][]string{
-			"p0": payloadValues,
+			"p0": sorted,
 		}
 	}
 
@@ -395,40 +408,6 @@ func (p *PatternMiner) extractPayloads(levelPositions []LevelPosition, tokenized
 	}
 
 	return payloads
-}
-
-// validatePatternQuality checks if a generated pattern meets quality thresholds.
-//
-// QUALITY METRICS:
-// 1. Input/Output Ratio: Check pattern doesn't generate too many variations
-// 2. Pattern Specificity: Ensure pattern isn't too generic
-// 3. Payload Size: Validate payload values are reasonable
-//
-// RETURNS:
-//
-//	bool - true if pattern passes quality checks, false otherwise
-//
-// TODO: Implement pattern quality validation
-func (p *PatternMiner) validatePatternQuality(pattern *DSLPattern, inputSize int) bool {
-	// Placeholder: To be implemented
-	// This should:
-	// 1. Calculate quality metrics
-	// 2. Compare against thresholds from options
-	// 3. Return validation result
-
-	// Check pattern threshold
-	if p.options.PatternThreshold > 0 {
-		// TODO: Implement threshold check
-	}
-
-	// Check quality ratio
-	if p.options.PatternQualityRatio > 0 {
-		// TODO: Implement ratio check
-	}
-
-	_ = pattern
-	_ = inputSize
-	return false
 }
 
 // tryGenerateAndStorePattern attempts to generate a pattern from subdomains and store it.

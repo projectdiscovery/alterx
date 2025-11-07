@@ -37,6 +37,9 @@ type Options struct {
 	// MaxPatternLength is the maximum length of generated pattern string
 	// patterns exceeding this length are discarded
 	MaxPatternLength int
+	// NgramsLimit limits the number of ngrams processed in hierarchical clustering
+	// If 0, all ngrams are processed. This matches Python's ngrams_limit parameter.
+	NgramsLimit int
 }
 
 func (o *Options) applyDefaults() {

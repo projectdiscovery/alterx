@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/projectdiscovery/alterx/mining"
 	"github.com/projectdiscovery/fasttemplate"
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/utils/dedupe"
@@ -42,6 +43,12 @@ type Options struct {
 	MaxSize int
 	// Discover tries to discover new pattern based on the input domains
 	Discover bool
+	// Mining/Discovery options (used when Discover=true)
+	MinLDist            int // minimum levenshtein distance for clustering
+	MaxLDist            int // maximum levenshtein distance for clustering
+	PatternThreshold    int // threshold for filtering low-quality patterns
+	PatternQualityRatio int // pattern quality ratio threshold
+	NgramsLimit         int // limit number of n-grams to process (0 = all)
 }
 
 // Mutator
@@ -59,7 +66,41 @@ func New(opts *Options) (*Mutator, error) {
 	if len(opts.Domains) == 0 {
 		return nil, fmt.Errorf("no input provided to calculate permutations")
 	}
-	if !opts.Discover {
+
+	// Create appropriate pattern provider based on mode
+	var provider PatternProvider
+	if opts.Discover {
+		// Discover mode: mine patterns from input domains
+		if len(opts.Domains) < 10 {
+			gologger.Warning().Msgf("discover mode performance may be degraded with less than 10 domains")
+		}
+
+		// Create mining options from user-provided values (or defaults)
+		miningOpts := &mining.Options{
+			MinLDist:            opts.MinLDist,
+			MaxLDist:            opts.MaxLDist,
+			PatternThreshold:    float64(opts.PatternThreshold),
+			PatternQualityRatio: float64(opts.PatternQualityRatio),
+			NgramsLimit:         opts.NgramsLimit,
+		}
+
+		// Apply defaults if not set
+		if miningOpts.MinLDist == 0 {
+			miningOpts.MinLDist = 2
+		}
+		if miningOpts.MaxLDist == 0 {
+			miningOpts.MaxLDist = 5
+		}
+		if miningOpts.PatternThreshold == 0 {
+			miningOpts.PatternThreshold = 1000
+		}
+		if miningOpts.PatternQualityRatio == 0 {
+			miningOpts.PatternQualityRatio = 100
+		}
+
+		provider = NewMinedPatternProvider(opts.Domains, miningOpts)
+	} else {
+		// Manual mode: use user-provided patterns and payloads
 		if len(opts.Payloads) == 0 {
 			opts.Payloads = map[string][]string{}
 			if len(DefaultConfig.Payloads) == 0 {
@@ -81,15 +122,19 @@ func New(opts *Options) (*Mutator, error) {
 				opts.Payloads[k] = dedupe
 			}
 		}
-	} else {
-		// make sure domains is given and not empty ( warn against <10 domains)
-		if len(opts.Domains) == 0 {
-			return nil, fmt.Errorf("no input provided to discover patterns")
-		}
-		if len(opts.Domains) < 10 {
-			gologger.Warning().Msgf("discover mode performance may be degraded with less than 10 domains")
-		}
+
+		provider = NewManualPatternProvider(opts.Patterns, opts.Payloads)
 	}
+
+	// Get patterns and payloads from provider
+	patterns, payloads, err := provider.GetPatterns()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get patterns: %w", err)
+	}
+
+	// Update options with patterns and payloads from provider
+	opts.Patterns = patterns
+	opts.Payloads = payloads
 
 	m := &Mutator{
 		Options: opts,

@@ -44,8 +44,15 @@ func (p *PatternMiner) hierarchicalNgramClustering() error {
 	allNgrams := append([]string{}, unigrams...)
 	allNgrams = append(allNgrams, bigrams...)
 
+	// Apply ngram limit to match Python's behavior (ngrams_limit parameter)
+	// If NgramsLimit is 0, process all ngrams. Otherwise, limit to first N ngrams.
+	ngramsToProcess := allNgrams
+	if p.options.NgramsLimit > 0 && len(allNgrams) > p.options.NgramsLimit {
+		ngramsToProcess = allNgrams[:p.options.NgramsLimit]
+	}
+
 	// Process each ngram hierarchically
-	for _, ngram := range allNgrams {
+	for _, ngram := range ngramsToProcess {
 		if err := p.processNgramHierarchy(ngram); err != nil {
 			return err
 		}
@@ -141,16 +148,12 @@ func (p *PatternMiner) processPrefixLevel(prefix string) bool {
 		return false
 	}
 
-	patternAdded := false
-
 	// Step 2: Chance 2 - Generate and store pattern from ALL prefix keys directly
 	// Python: r = closure_to_regex(args['target'], keys)
 	//         if r not in new_rules and is_good_rule(r, len(keys), ...):
 	//           last = prefix  # Only update last when pattern is added
 	//           new_rules.add(r)
-	if p.tryGenerateAndStorePattern(prefixKeys) {
-		patternAdded = true
-	}
+	patternAdded := p.tryGenerateAndStorePattern(prefixKeys)
 
 	// Step 3: Chance 3 - If prefix length > 1, do edit distance clustering
 	// Python: if len(prefix) > 1:

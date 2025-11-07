@@ -14,12 +14,18 @@ func main() {
 	cliOpts := runner.ParseFlags()
 
 	alterOpts := alterx.Options{
-		Domains:  cliOpts.Domains,
-		Patterns: cliOpts.Patterns,
-		Payloads: cliOpts.Payloads,
-		Limit:    cliOpts.Limit,
-		Enrich:   cliOpts.Enrich, // enrich payloads
-		MaxSize: cliOpts.MaxSize,
+		Domains:             cliOpts.Domains,
+		Patterns:            cliOpts.Patterns,
+		Payloads:            cliOpts.Payloads,
+		Limit:               cliOpts.Limit,
+		Enrich:              cliOpts.Enrich, // enrich payloads
+		MaxSize:             cliOpts.MaxSize,
+		Discover:            cliOpts.Discover,
+		MinLDist:            cliOpts.MinLDist,
+		MaxLDist:            cliOpts.MaxLDist,
+		PatternThreshold:    cliOpts.PatternThreshold,
+		PatternQualityRatio: cliOpts.PatternQualityRatio,
+		NgramsLimit:         cliOpts.NgramsLimit,
 	}
 
 	if cliOpts.PermutationConfig != "" {
@@ -44,7 +50,11 @@ func main() {
 			gologger.Fatal().Msgf("failed to open output file %v got %v", cliOpts.Output, err)
 		}
 		output = fs
-		defer fs.Close()
+		defer func() {
+			if err := fs.Close(); err != nil {
+				gologger.Error().Msgf("failed to close output file: %v", err)
+			}
+		}()
 	} else {
 		output = os.Stdout
 	}
