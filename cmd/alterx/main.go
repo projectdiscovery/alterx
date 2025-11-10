@@ -51,13 +51,6 @@ func main() {
 		gologger.Fatal().Msgf("failed to initialize alterx: %v", err)
 	}
 
-	// Save rules if requested
-	if cliOpts.SaveRules != "" {
-		if err := m.SaveRules(cliOpts.SaveRules); err != nil {
-			gologger.Error().Msgf("failed to save rules: %v", err)
-		}
-	}
-
 	if cliOpts.Estimate {
 		estimated := m.EstimateCount()
 		gologger.Info().Msgf("Estimated Payloads (including duplicates): %v", estimated)
@@ -70,6 +63,13 @@ func main() {
 	}
 
 	gologger.Info().Msgf("Generated %d total unique subdomains", m.PayloadCount())
+
+	// Save rules if requested (must be after Execute to ensure mining is complete)
+	if cliOpts.SaveRules != "" {
+		if err := m.SaveRules(cliOpts.SaveRules); err != nil {
+			gologger.Error().Msgf("failed to save rules: %v", err)
+		}
+	}
 }
 
 // getOutputWriter returns the appropriate output writer
