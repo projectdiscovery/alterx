@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"unsafe"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 var varRegex = regexp.MustCompile(`\{\{([a-zA-Z0-9]+)\}\}`)
@@ -56,4 +58,33 @@ func checkMissing(template string, data map[string]interface{}) error {
 // Reference - https://stackoverflow.com/questions/59209493/how-to-use-unsafe-get-a-byte-slice-from-a-string-without-memory-copy
 func unsafeToBytes(data string) []byte {
 	return unsafe.Slice(unsafe.StringData(data), len(data))
+}
+
+func getNValidateRootDomain(domains []string) (string, error) {
+	if len(domains) == 0 {
+		return "", fmt.Errorf("no domains provided")
+	}
+
+	var rootDomain string
+	// parse root domain from publicsuffix for first entry
+	for _, domain := range domains {
+		if strings.TrimSpace(domain) == "" {
+			continue
+		}
+		if rootDomain == "" {
+			root, err := publicsuffix.EffectiveTLDPlusOne(domain)
+			if err != nil || root == "" {
+				return "", fmt.Errorf("failed to derive root domain from %v: %v", domain, err)
+			}
+			rootDomain = root
+		} else {
+			if domain != rootDomain && !strings.HasSuffix(domain, "."+rootDomain) {
+				return "", fmt.Errorf("domain %v does not have the same root domain as %v, only homogeneous domains are supported in discover mode", domain, rootDomain)
+			}
+		}
+	}
+	if rootDomain == "" {
+		return "", fmt.Errorf("no valid domains found after filtering empty entries")
+	}
+	return rootDomain, nil
 }

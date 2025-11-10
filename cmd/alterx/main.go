@@ -3,101 +3,34 @@ package main
 import (
 	"io"
 	"os"
-	"strings"
 
 	"github.com/projectdiscovery/alterx"
-	"github.com/projectdiscovery/alterx/internal/patternmining"
 	"github.com/projectdiscovery/alterx/internal/runner"
 	"github.com/projectdiscovery/gologger"
-	"golang.org/x/net/publicsuffix"
 )
 
 func main() {
 
 	cliOpts := runner.ParseFlags()
 
-	// Validate mode
-	if cliOpts.Mode != "default" && cliOpts.Mode != "discover" && cliOpts.Mode != "both" {
-		gologger.Fatal().Msgf("invalid mode: %s (must be 'default', 'discover', or 'both')", cliOpts.Mode)
-	}
-
 	// Write output with deduplication
 	output := getOutputWriter(cliOpts.Output)
-	defer closeOutput(output, cliOpts.Output)
-	// we intentionally remove all known subdomains from the output
-	// that way only the discovered subdomains are included in the output
-	dedupWriter := alterx.NewDedupingWriter(output, cliOpts.Domains...)
-	defer func() {
-		if err := dedupWriter.Close(); err != nil {
-			gologger.Error().Msgf("failed to close dedup writer: %v", err)
-		}
-	}()
 
-	var estimatedDiscoverOutputs = 0
-
-	// Handle pattern mining modes (discover or both)
-	var minedPatterns []string
-	if cliOpts.Mode == "discover" || cliOpts.Mode == "both" {
-		target := getNValidateRootDomain(cliOpts.Domains)
-		if target == "" {
-			gologger.Fatal().Msgf("pattern mining requires domains with a common target (e.g., sub.example.com)")
-		}
-		gologger.Info().Msgf("Target domain: %s", target)
-
-		miner := patternmining.NewMiner(&patternmining.Options{
-			Domains:          cliOpts.Domains,
-			Target:           target,
-			MinDistance:      cliOpts.MinDistance,
-			MaxDistance:      cliOpts.MaxDistance,
-			PatternThreshold: cliOpts.PatternThreshold,
-			QualityRatio:     float64(cliOpts.QualityRatio),
-			MaxLength:        1000,
-			NgramsLimit:      cliOpts.NgramsLimit,
-		})
-
-		result, err := miner.Mine()
-		if err != nil {
-			gologger.Fatal().Msgf("pattern mining failed: %v", err)
-		}
-
-		// Save rules if requested
-		if cliOpts.SaveRules != "" {
-			if err := miner.SaveRules(result, cliOpts.SaveRules); err != nil {
-				gologger.Error().Msgf("failed to save rules: %v", err)
-			} else {
-				gologger.Info().Msgf("Saved %d patterns to %s", len(result.Patterns), cliOpts.SaveRules)
-			}
-		}
-
-		estimatedDiscoverOutputs = int(miner.EstimateCount(result.Patterns))
-
-		// Generate subdomains from discovered patterns
-		// and exit early
-		if cliOpts.Mode == "discover" {
-			// In discover mode, only use mined patterns
-			generated := miner.GenerateFromPatterns(result.Patterns)
-			for _, subdomain := range generated {
-				if _, err := dedupWriter.Write([]byte(subdomain + "\n")); err != nil {
-					gologger.Error().Msgf("failed to write subdomain: %v", err)
-				}
-			}
-			gologger.Info().Msgf("Generated %d unique subdomains from discovered patterns", dedupWriter.Count())
-			return
-		}
-
-		// In 'both' mode, collect mined patterns for combination
-		minedPatterns = result.Patterns
-		gologger.Info().Msgf("Discovered %d patterns, combining with user-defined patterns", len(minedPatterns))
-	}
-
-	// Handle default mode or 'both' mode
+	// Build alterx options with all modes supported
 	alterOpts := alterx.Options{
-		Domains:  cliOpts.Domains,
-		Patterns: cliOpts.Patterns,
-		Payloads: cliOpts.Payloads,
-		Limit:    cliOpts.Limit,
-		Enrich:   cliOpts.Enrich,
-		MaxSize:  cliOpts.MaxSize,
+		Domains:          cliOpts.Domains,
+		Patterns:         cliOpts.Patterns,
+		Payloads:         cliOpts.Payloads,
+		Limit:            cliOpts.Limit,
+		Enrich:           cliOpts.Enrich,
+		MaxSize:          cliOpts.MaxSize,
+		Mode:             cliOpts.Mode,
+		MinDistance:      cliOpts.MinDistance,
+		MaxDistance:      cliOpts.MaxDistance,
+		PatternThreshold: cliOpts.PatternThreshold,
+		QualityRatio:     float64(cliOpts.QualityRatio),
+		NgramsLimit:      cliOpts.NgramsLimit,
+		MaxLength:        1000,
 	}
 
 	if cliOpts.PermutationConfig != "" {
@@ -115,20 +48,28 @@ func main() {
 
 	m, err := alterx.New(&alterOpts)
 	if err != nil {
-		gologger.Fatal().Msgf("failed to parse alterx config got %v", err)
+		gologger.Fatal().Msgf("failed to initialize alterx: %v", err)
+	}
+
+	// Save rules if requested
+	if cliOpts.SaveRules != "" {
+		if err := m.SaveRules(cliOpts.SaveRules); err != nil {
+			gologger.Error().Msgf("failed to save rules: %v", err)
+		}
 	}
 
 	if cliOpts.Estimate {
-		estimated := m.EstimateCount() + estimatedDiscoverOutputs
+		estimated := m.EstimateCount()
 		gologger.Info().Msgf("Estimated Payloads (including duplicates): %v", estimated)
 		return
 	}
-	// Write alterx results to same dedupWriter (automatic deduplication)
-	if err = m.ExecuteWithWriter(dedupWriter); err != nil {
-		gologger.Error().Msgf("failed to write output to file got %v", err)
+
+	// Execute mutator (handles all modes internally)
+	if err = m.ExecuteWithWriter(output); err != nil {
+		gologger.Error().Msgf("failed to execute alterx: %v", err)
 	}
 
-	gologger.Info().Msgf("Generated %d total unique subdomains (both modes)", dedupWriter.Count())
+	gologger.Info().Msgf("Generated %d total unique subdomains", m.PayloadCount())
 }
 
 // getOutputWriter returns the appropriate output writer
@@ -141,41 +82,4 @@ func getOutputWriter(outputPath string) io.Writer {
 		return fs
 	}
 	return os.Stdout
-}
-
-// closeOutput closes the output writer if it's a file
-func closeOutput(output io.Writer, outputPath string) {
-	if outputPath != "" {
-		if closer, ok := output.(io.Closer); ok {
-			if err := closer.Close(); err != nil {
-				gologger.Error().Msgf("failed to close output file: %v", err)
-			}
-		}
-	}
-}
-
-func getNValidateRootDomain(domains []string) string {
-	if len(domains) == 0 {
-		return ""
-	}
-
-	var rootDomain string
-	// parse root domain from publicsuffix for first entry
-	for _, domain := range domains {
-		if strings.TrimSpace(domain) == "" {
-			continue
-		}
-		if rootDomain == "" {
-			root, err := publicsuffix.EffectiveTLDPlusOne(domain)
-			if err != nil || root == "" {
-				gologger.Fatal().Msgf("failed to derive root domain from %v: %v", domain, err)
-			}
-			rootDomain = root
-		} else {
-			if domain != rootDomain && !strings.HasSuffix(domain, "."+rootDomain) {
-				gologger.Fatal().Msgf("domain %v does not have the same root domain as %v, only homogeneous domains are supported in discover mode", domain, rootDomain)
-			}
-		}
-	}
-	return rootDomain
 }
