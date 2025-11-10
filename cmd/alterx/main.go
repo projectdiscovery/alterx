@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"io"
 	"os"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"github.com/projectdiscovery/alterx/internal/patternmining"
 	"github.com/projectdiscovery/alterx/internal/runner"
 	"github.com/projectdiscovery/gologger"
+	"golang.org/x/net/publicsuffix"
 )
 
 func main() {
@@ -21,15 +21,23 @@ func main() {
 		gologger.Fatal().Msgf("invalid mode: %s (must be 'default', 'discover', or 'both')", cliOpts.Mode)
 	}
 
+	// Write output with deduplication
+	output := getOutputWriter(cliOpts.Output)
+	defer closeOutput(output, cliOpts.Output)
+	// we intentionally remove all known subdomains from the output
+	// that way only the discovered subdomains are included in the output
+	dedupWriter := alterx.NewDedupingWriter(output, cliOpts.Domains...)
+	defer dedupWriter.Close()
+
+	var estimatedDiscoverOutputs = 0
+
 	// Handle pattern mining modes (discover or both)
 	var minedPatterns []string
 	if cliOpts.Mode == "discover" || cliOpts.Mode == "both" {
-		target := extractTargetDomain(cliOpts.Domains)
+		target := getNValidateRootDomain(cliOpts.Domains)
 		if target == "" {
 			gologger.Fatal().Msgf("pattern mining requires domains with a common target (e.g., sub.example.com)")
 		}
-
-		gologger.Info().Msgf("Pattern mining mode enabled (Go port of Regulator by @cramppet)")
 		gologger.Info().Msgf("Target domain: %s", target)
 
 		miner := patternmining.NewMiner(&patternmining.Options{
@@ -57,23 +65,17 @@ func main() {
 			}
 		}
 
+		estimatedDiscoverOutputs = int(miner.EstimateCount(result.Patterns))
+
 		// Generate subdomains from discovered patterns
+		// and exit early
 		if cliOpts.Mode == "discover" {
 			// In discover mode, only use mined patterns
 			generated := miner.GenerateFromPatterns(result.Patterns)
-
-			// Write output
-			output := getOutputWriter(cliOpts.Output)
-			defer closeOutput(output, cliOpts.Output)
-
 			for _, subdomain := range generated {
-				if cliOpts.Limit > 0 && len(generated) >= cliOpts.Limit {
-					break
-				}
-				output.Write([]byte(subdomain + "\n"))
+				dedupWriter.Write([]byte(subdomain + "\n"))
 			}
-
-			gologger.Info().Msgf("Generated %d subdomains from discovered patterns", len(generated))
+			gologger.Info().Msgf("Generated %d unique subdomains from discovered patterns", dedupWriter.Count())
 			return
 		}
 
@@ -105,82 +107,22 @@ func main() {
 		}
 	}
 
-	// In 'both' mode, add mined patterns to user patterns
-	if cliOpts.Mode == "both" && len(minedPatterns) > 0 {
-		// Convert mined patterns to alterx format
-		// Mined patterns are already in regex format, but alterx expects template format
-		// For now, we'll generate from mined patterns separately and combine results
-		target := extractTargetDomain(cliOpts.Domains)
-		miner := patternmining.NewMiner(&patternmining.Options{
-			Domains:          cliOpts.Domains,
-			Target:           target,
-			MinDistance:      cliOpts.MinDistance,
-			MaxDistance:      cliOpts.MaxDistance,
-			PatternThreshold: cliOpts.PatternThreshold,
-			QualityRatio:     float64(cliOpts.QualityRatio),
-			MaxLength:        1000,
-			NgramsLimit:      cliOpts.NgramsLimit,
-		})
-
-		generated := miner.GenerateFromPatterns(minedPatterns)
-
-		// Use a dedupe set for both modes
-		allResults := make(map[string]bool)
-		for _, g := range generated {
-			allResults[g] = true
-		}
-
-		// Now run the normal alterx generation
-		output := getOutputWriter(cliOpts.Output)
-		defer closeOutput(output, cliOpts.Output)
-
-		m, err := alterx.New(&alterOpts)
-		if err != nil {
-			gologger.Fatal().Msgf("failed to parse alterx config got %v", err)
-		}
-
-		if cliOpts.Estimate {
-			estimated := m.EstimateCount() + len(generated)
-			gologger.Info().Msgf("Estimated Payloads (including duplicates): %v", estimated)
-			return
-		}
-
-		// First write mined results
-		count := 0
-		for subdomain := range allResults {
-			if cliOpts.Limit > 0 && count >= cliOpts.Limit {
-				break
-			}
-			output.Write([]byte(subdomain + "\n"))
-			count++
-		}
-
-		// Then write alterx results (with deduplication)
-		if err = executeAlterxWithDedup(m, output, allResults, cliOpts.Limit-count); err != nil {
-			gologger.Error().Msgf("failed to write output to file got %v", err)
-		}
-
-		gologger.Info().Msgf("Generated %d total unique subdomains (both modes)", len(allResults))
-		return
-	}
-
-	// Standard default mode
-	output := getOutputWriter(cliOpts.Output)
-	defer closeOutput(output, cliOpts.Output)
-
 	m, err := alterx.New(&alterOpts)
 	if err != nil {
 		gologger.Fatal().Msgf("failed to parse alterx config got %v", err)
 	}
 
 	if cliOpts.Estimate {
-		gologger.Info().Msgf("Estimated Payloads (including duplicates): %v", m.EstimateCount())
+		estimated := m.EstimateCount() + estimatedDiscoverOutputs
+		gologger.Info().Msgf("Estimated Payloads (including duplicates): %v", estimated)
 		return
 	}
-
-	if err = m.ExecuteWithWriter(output); err != nil {
+	// Write alterx results to same dedupWriter (automatic deduplication)
+	if err = m.ExecuteWithWriter(dedupWriter); err != nil {
 		gologger.Error().Msgf("failed to write output to file got %v", err)
 	}
+
+	gologger.Info().Msgf("Generated %d total unique subdomains (both modes)", dedupWriter.Count())
 }
 
 // extractTargetDomain extracts the common target domain from input domains
@@ -220,22 +162,25 @@ func closeOutput(output io.Writer, outputPath string) {
 	}
 }
 
-// executeAlterxWithDedup executes alterx with deduplication against existing results
-func executeAlterxWithDedup(m *alterx.Mutator, output io.Writer, existing map[string]bool, remainingLimit int) error {
-	// We need to capture alterx output and dedupe it
-	// Create a custom writer that dedupes
-	count := 0
-	resChan := m.Execute(context.TODO())
+func getNValidateRootDomain(domains []string) string {
+	if len(domains) == 0 {
+		return ""
+	}
 
-	for value := range resChan {
-		if remainingLimit > 0 && count >= remainingLimit {
+	var rootDomain string
+	// parse root domain from publicsuffix for first entry
+	for _, domain := range domains {
+		if strings.TrimSpace(domain) == "" {
 			continue
 		}
-		if !existing[value] && !strings.HasPrefix(value, "-") {
-			existing[value] = true
-			output.Write([]byte(value + "\n"))
-			count++
+		if rootDomain == "" {
+			root, _ := publicsuffix.EffectiveTLDPlusOne(domain)
+			rootDomain = root
+		} else {
+			if !strings.HasSuffix(domain, rootDomain) {
+				gologger.Fatal().Msgf("domain %v does not have the same root domain as %v, only homogeneous domains are supported in discover mode", domain, rootDomain)
+			}
 		}
 	}
-	return nil
+	return ""
 }

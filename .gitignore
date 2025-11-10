@@ -4,7 +4,6 @@
 *.dll
 *.so
 *.dylib
-cmd/alterx/alterx
 dist
 .idea
 .vscode
@@ -17,3 +16,5 @@ dist
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+/cmd/alterx/alterx
+/alterx

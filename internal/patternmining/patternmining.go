@@ -334,6 +334,33 @@ func (m *Miner) SaveRules(result *Result, filename string) error {
 	return enc.Encode(grouped)
 }
 
+// EstimateCount estimates the number of subdomains that would be generated from patterns
+// This uses the DFA's NumWords method to count without actually generating strings
+func (m *Miner) EstimateCount(patterns []string) int64 {
+	var totalEstimate int64
+
+	for _, pattern := range patterns {
+		subdomainPattern := strings.TrimSuffix(pattern, "."+m.opts.Target)
+		if len(subdomainPattern) == 0 {
+			continue
+		}
+
+		// Calculate fixed length for generation
+		tempEncoder := dank.NewDankEncoder(m.preparePattern(subdomainPattern), 1)
+		fixedSlice := tempEncoder.NumStates() - 2
+		if fixedSlice < 0 {
+			fixedSlice = 0
+		}
+
+		encoder := dank.NewDankEncoder(m.preparePattern(subdomainPattern), fixedSlice)
+		// Use NumWords to count strings at fixed length without generating them
+		count := encoder.NumWords(fixedSlice, fixedSlice)
+		totalEstimate += count
+	}
+
+	return totalEstimate
+}
+
 // GenerateFromPatterns generates subdomains from discovered patterns
 func (m *Miner) GenerateFromPatterns(patterns []string) []string {
 	var results []string
