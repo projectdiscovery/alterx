@@ -12,14 +12,26 @@ func TestDedupingWriter(t *testing.T) {
 		dw := NewDedupingWriter(buf)
 
 		// Write some duplicate data
-		dw.Write([]byte("test1\n"))
-		dw.Write([]byte("test2\n"))
-		dw.Write([]byte("test1\n")) // duplicate
-		dw.Write([]byte("test3\n"))
-		dw.Write([]byte("test2\n")) // duplicate
+		if _, err := dw.Write([]byte("test1\n")); err != nil {
+			t.Fatalf("failed to write: %v", err)
+		}
+		if _, err := dw.Write([]byte("test2\n")); err != nil {
+			t.Fatalf("failed to write: %v", err)
+		}
+		if _, err := dw.Write([]byte("test1\n")); err != nil { // duplicate
+			t.Fatalf("failed to write: %v", err)
+		}
+		if _, err := dw.Write([]byte("test3\n")); err != nil {
+			t.Fatalf("failed to write: %v", err)
+		}
+		if _, err := dw.Write([]byte("test2\n")); err != nil { // duplicate
+			t.Fatalf("failed to write: %v", err)
+		}
 
 		// Close to flush and wait for async processing
-		dw.Close()
+		if err := dw.Close(); err != nil {
+			t.Fatalf("failed to close: %v", err)
+		}
 
 		// Give a moment for async processing to complete
 		time.Sleep(100 * time.Millisecond)
@@ -40,12 +52,22 @@ func TestDedupingWriter(t *testing.T) {
 		dw := NewDedupingWriter(buf, "test1", "test3")
 
 		// Write data including items in blacklist
-		dw.Write([]byte("test1\n")) // in blacklist
-		dw.Write([]byte("test2\n"))
-		dw.Write([]byte("test3\n")) // in blacklist
-		dw.Write([]byte("test4\n"))
+		if _, err := dw.Write([]byte("test1\n")); err != nil { // in blacklist
+			t.Fatalf("failed to write: %v", err)
+		}
+		if _, err := dw.Write([]byte("test2\n")); err != nil {
+			t.Fatalf("failed to write: %v", err)
+		}
+		if _, err := dw.Write([]byte("test3\n")); err != nil { // in blacklist
+			t.Fatalf("failed to write: %v", err)
+		}
+		if _, err := dw.Write([]byte("test4\n")); err != nil {
+			t.Fatalf("failed to write: %v", err)
+		}
 
-		dw.Close()
+		if err := dw.Close(); err != nil {
+			t.Fatalf("failed to close: %v", err)
+		}
 		time.Sleep(100 * time.Millisecond)
 
 		if dw.Count() != 2 {
@@ -67,12 +89,22 @@ func TestDedupingWriter(t *testing.T) {
 		buf := &bytes.Buffer{}
 		dw := NewDedupingWriter(buf)
 
-		dw.Write([]byte("test1\n"))
-		dw.Write([]byte("-skip-this\n"))
-		dw.Write([]byte("test2\n"))
-		dw.Write([]byte("-skip-that\n"))
+		if _, err := dw.Write([]byte("test1\n")); err != nil {
+			t.Fatalf("failed to write: %v", err)
+		}
+		if _, err := dw.Write([]byte("-skip-this\n")); err != nil {
+			t.Fatalf("failed to write: %v", err)
+		}
+		if _, err := dw.Write([]byte("test2\n")); err != nil {
+			t.Fatalf("failed to write: %v", err)
+		}
+		if _, err := dw.Write([]byte("-skip-that\n")); err != nil {
+			t.Fatalf("failed to write: %v", err)
+		}
 
-		dw.Close()
+		if err := dw.Close(); err != nil {
+			t.Fatalf("failed to close: %v", err)
+		}
 		time.Sleep(100 * time.Millisecond)
 
 		if dw.Count() != 2 {
@@ -90,9 +122,13 @@ func TestDedupingWriter(t *testing.T) {
 		dw := NewDedupingWriter(buf)
 
 		// Write multiple lines at once with duplicates
-		dw.Write([]byte("test1\ntest2\ntest1\ntest3\n"))
+		if _, err := dw.Write([]byte("test1\ntest2\ntest1\ntest3\n")); err != nil {
+			t.Fatalf("failed to write: %v", err)
+		}
 
-		dw.Close()
+		if err := dw.Close(); err != nil {
+			t.Fatalf("failed to close: %v", err)
+		}
 		time.Sleep(100 * time.Millisecond)
 
 		if dw.Count() != 3 {
@@ -109,9 +145,13 @@ func TestDedupingWriter(t *testing.T) {
 		buf := &bytes.Buffer{}
 		dw := NewDedupingWriter(buf)
 
-		dw.Write([]byte("test1\n\ntest2\n\n"))
+		if _, err := dw.Write([]byte("test1\n\ntest2\n\n")); err != nil {
+			t.Fatalf("failed to write: %v", err)
+		}
 
-		dw.Close()
+		if err := dw.Close(); err != nil {
+			t.Fatalf("failed to close: %v", err)
+		}
 		time.Sleep(100 * time.Millisecond)
 
 		if dw.Count() != 2 {

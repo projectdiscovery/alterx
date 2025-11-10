@@ -27,7 +27,11 @@ func main() {
 	// we intentionally remove all known subdomains from the output
 	// that way only the discovered subdomains are included in the output
 	dedupWriter := alterx.NewDedupingWriter(output, cliOpts.Domains...)
-	defer dedupWriter.Close()
+	defer func() {
+		if err := dedupWriter.Close(); err != nil {
+			gologger.Error().Msgf("failed to close dedup writer: %v", err)
+		}
+	}()
 
 	var estimatedDiscoverOutputs = 0
 
@@ -73,7 +77,9 @@ func main() {
 			// In discover mode, only use mined patterns
 			generated := miner.GenerateFromPatterns(result.Patterns)
 			for _, subdomain := range generated {
-				dedupWriter.Write([]byte(subdomain + "\n"))
+				if _, err := dedupWriter.Write([]byte(subdomain + "\n")); err != nil {
+					gologger.Error().Msgf("failed to write subdomain: %v", err)
+				}
 			}
 			gologger.Info().Msgf("Generated %d unique subdomains from discovered patterns", dedupWriter.Count())
 			return
@@ -125,22 +131,6 @@ func main() {
 	gologger.Info().Msgf("Generated %d total unique subdomains (both modes)", dedupWriter.Count())
 }
 
-// extractTargetDomain extracts the common target domain from input domains
-func extractTargetDomain(domains []string) string {
-	if len(domains) == 0 {
-		return ""
-	}
-
-	// Take the first domain and extract root domain
-	first := domains[0]
-	parts := strings.Split(first, ".")
-	if len(parts) >= 2 {
-		// Return last two parts as target domain (e.g., "example.com")
-		return strings.Join(parts[len(parts)-2:], ".")
-	}
-	return first
-}
-
 // getOutputWriter returns the appropriate output writer
 func getOutputWriter(outputPath string) io.Writer {
 	if outputPath != "" {
@@ -157,7 +147,9 @@ func getOutputWriter(outputPath string) io.Writer {
 func closeOutput(output io.Writer, outputPath string) {
 	if outputPath != "" {
 		if closer, ok := output.(io.Closer); ok {
-			closer.Close()
+			if err := closer.Close(); err != nil {
+				gologger.Error().Msgf("failed to close output file: %v", err)
+			}
 		}
 	}
 }

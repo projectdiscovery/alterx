@@ -324,7 +324,11 @@ func (m *Miner) SaveRules(result *Result, filename string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	// Group patterns by step with metadata
 	grouped := m.groupRulesByStep(result.Metadata)
