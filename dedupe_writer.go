@@ -1,7 +1,6 @@
 package alterx
 
 import (
-	"bufio"
 	"bytes"
 	"io"
 	"strings"
@@ -92,21 +91,16 @@ func (dw *DedupingWriter) Write(p []byte) (int, error) {
 	dw.buffer = append(dw.buffer, p...)
 
 	// Process complete lines
-	scanner := bufio.NewScanner(bytes.NewReader(dw.buffer))
-	lastIdx := 0
-	for scanner.Scan() {
-		line := scanner.Text()
-		lastIdx += len(line) + 1 // +1 for newline
+	for {
+		idx := bytes.IndexByte(dw.buffer, '\n')
+		if idx == -1 {
+			break
+		}
 
-		// Send to dedupe input channel
+		line := string(dw.buffer[:idx])
 		dw.inputCh <- line
-	}
-
-	// Keep incomplete line in buffer
-	if lastIdx < len(dw.buffer) {
-		dw.buffer = dw.buffer[lastIdx:]
-	} else {
-		dw.buffer = dw.buffer[:0]
+		// Drop processed line plus newline
+		dw.buffer = dw.buffer[idx+1:]
 	}
 
 	// Always return original length to satisfy io.Writer contract

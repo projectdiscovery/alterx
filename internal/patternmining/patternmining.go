@@ -116,7 +116,7 @@ func (m *Miner) Mine() (*Result, error) {
 
 	// Phase 1: No enforced prefix - edit distance clustering
 	gologger.Verbose().Msgf("Phase 1: Edit distance clustering...")
-	for k := m.opts.MinDistance; k < m.opts.MaxDistance; k++ {
+	for k := m.opts.MinDistance; k <= m.opts.MaxDistance; k++ {
 		closures := m.editClosures(knownHosts, k)
 		for _, closure := range closures {
 			if len(closure) <= 1 {
@@ -214,7 +214,7 @@ func (m *Miner) Mine() (*Result, error) {
 
 			// Apply edit distance clustering within prefix group
 			if len(prefix) > 1 {
-				for kk := m.opts.MinDistance; kk < m.opts.MaxDistance; kk++ {
+				for kk := m.opts.MinDistance; kk <= m.opts.MaxDistance; kk++ {
 					closures := m.editClosures(keys2, kk)
 					for _, closure := range closures {
 						rUn, _ := m.closureToRegex(false, closure)
@@ -498,8 +498,8 @@ func (m *Miner) groupRulesByStep(rules map[string]map[string]interface{}) *Rules
 		if clusterSize, ok := meta["cluster_size"].(int); ok {
 			patternMeta.ClusterSize = clusterSize
 		}
-		if nwords, ok := meta["nwords"].(int); ok {
-			patternMeta.Nwords = nwords
+		if nwords, ok := meta["nwords"].(int64); ok {
+			patternMeta.Nwords = int(nwords)
 		}
 		if ratio, ok := meta["ratio"].(float64); ok {
 			patternMeta.Ratio = ratio

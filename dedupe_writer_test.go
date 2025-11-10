@@ -3,7 +3,6 @@ package alterx
 import (
 	"bytes"
 	"testing"
-	"time"
 )
 
 func TestDedupingWriter(t *testing.T) {
@@ -32,9 +31,6 @@ func TestDedupingWriter(t *testing.T) {
 		if err := dw.Close(); err != nil {
 			t.Fatalf("failed to close: %v", err)
 		}
-
-		// Give a moment for async processing to complete
-		time.Sleep(100 * time.Millisecond)
 
 		if dw.Count() != 3 {
 			t.Errorf("Expected 3 unique items, got %d", dw.Count())
@@ -68,7 +64,6 @@ func TestDedupingWriter(t *testing.T) {
 		if err := dw.Close(); err != nil {
 			t.Fatalf("failed to close: %v", err)
 		}
-		time.Sleep(100 * time.Millisecond)
 
 		if dw.Count() != 2 {
 			t.Errorf("Expected 2 unique items (excluding blacklist), got %d", dw.Count())
@@ -105,7 +100,6 @@ func TestDedupingWriter(t *testing.T) {
 		if err := dw.Close(); err != nil {
 			t.Fatalf("failed to close: %v", err)
 		}
-		time.Sleep(100 * time.Millisecond)
 
 		if dw.Count() != 2 {
 			t.Errorf("Expected 2 unique items (excluding dash lines), got %d", dw.Count())
@@ -129,7 +123,6 @@ func TestDedupingWriter(t *testing.T) {
 		if err := dw.Close(); err != nil {
 			t.Fatalf("failed to close: %v", err)
 		}
-		time.Sleep(100 * time.Millisecond)
 
 		if dw.Count() != 3 {
 			t.Errorf("Expected 3 unique items, got %d", dw.Count())
@@ -152,7 +145,6 @@ func TestDedupingWriter(t *testing.T) {
 		if err := dw.Close(); err != nil {
 			t.Fatalf("failed to close: %v", err)
 		}
-		time.Sleep(100 * time.Millisecond)
 
 		if dw.Count() != 2 {
 			t.Errorf("Expected 2 unique items (skipping empty), got %d", dw.Count())

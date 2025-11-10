@@ -166,13 +166,16 @@ func getNValidateRootDomain(domains []string) string {
 			continue
 		}
 		if rootDomain == "" {
-			root, _ := publicsuffix.EffectiveTLDPlusOne(domain)
+			root, err := publicsuffix.EffectiveTLDPlusOne(domain)
+			if err != nil || root == "" {
+				gologger.Fatal().Msgf("failed to derive root domain from %v: %v", domain, err)
+			}
 			rootDomain = root
 		} else {
-			if !strings.HasSuffix(domain, rootDomain) {
+			if domain != rootDomain && !strings.HasSuffix(domain, "."+rootDomain) {
 				gologger.Fatal().Msgf("domain %v does not have the same root domain as %v, only homogeneous domains are supported in discover mode", domain, rootDomain)
 			}
 		}
 	}
-	return ""
+	return rootDomain
 }
