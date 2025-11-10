@@ -35,7 +35,9 @@
 - **Automatic word enrichment**
 - Pre-defined variables
 - **Configurable Patterns**
+- **Pattern Mining** - Automatically discover subdomain patterns (Go port of [Regulator](https://github.com/cramppet/regulator))
 - STDIN / List input
+- Multiple operation modes (default, discover, both)
 
 ## Installation
 To install alterx, you need to have Golang 1.19 installed on your system. You can download Golang from [here](https://go.dev/doc/install). After installing Golang, you can use the following command to install alterx:
@@ -43,6 +45,31 @@ To install alterx, you need to have Golang 1.19 installed on your system. You ca
 
 ```bash
 go install github.com/projectdiscovery/alterx/cmd/alterx@latest
+```
+
+### Building from Source
+```bash
+# Clone the repository
+git clone https://github.com/projectdiscovery/alterx.git
+cd alterx
+
+# Build using Makefile
+make build
+
+# Or build manually
+go build ./cmd/alterx
+```
+
+Available Makefile targets:
+```bash
+make help          # Show all available targets
+make build         # Build the binary
+make test          # Run tests
+make test-coverage # Run tests with coverage
+make lint          # Run linter
+make fmt           # Format code
+make clean         # Clean build artifacts
+make install       # Install to $GOPATH/bin
 ```
 
 ## Help Menu

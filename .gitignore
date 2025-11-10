@@ -4,7 +4,6 @@
 *.dll
 *.so
 *.dylib
-cmd/alterx/alterx
 dist
 .idea
 .vscode
@@ -14,6 +13,9 @@ dist
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+coverage.html
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+/cmd/alterx/alterx
+/alterx
