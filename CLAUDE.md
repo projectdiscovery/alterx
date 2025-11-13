@@ -43,6 +43,13 @@ make run
 **Single test execution:**
 ```bash
 go test -v -run TestFunctionName ./path/to/package
+
+# Run specific test at package root
+go test -v -run TestMutator
+go test -v -run TestInput
+
+# Run with race detector
+go test -race -v ./...
 ```
 
 ## Architecture
@@ -50,21 +57,27 @@ go test -v -run TestFunctionName ./path/to/package
 ### Core Components
 
 **1. Entry Point** (`cmd/alterx/main.go`)
-- CLI argument parsing via `runner.ParseFlags()`
-- Mode selection logic (default/discover/both)
-- Pattern mining flow orchestration
-- Deduplication between mined and user-defined patterns
+- CLI argument parsing via `runner.ParseFlags()` using goflags library
+- Mode selection logic (default/discover/both) passed to `alterx.Options`
+- Pattern mining flow orchestration in `Mutator.Execute()` via goroutines
+- Output writing with `getOutputWriter()` (file or stdout)
+- Rules saving via `Mutator.SaveRules()` after execution completes
 
 **2. Mutator Engine** (`mutator.go`, `algo.go`)
-- `Mutator` struct: Core permutation generator
-- `ClusterBomb` algorithm: Nth-order payload combination using recursion
+- `Mutator` struct: Core permutation generator with concurrent execution
+- `Execute()` method: Runs default and/or mining modes in parallel goroutines
+- `ClusterBomb` algorithm: Recursive Nth-order payload combination (cartesian product)
 - `IndexMap`: Maintains deterministic ordering for payload iteration
-- Template replacement using variables extracted from input domains
+- Template replacement using `fasttemplate` library with `{{var}}` syntax
+- Deduplication via `dedupe.NewDedupe()` with configurable memory limits
+- Smart optimization: Skips words already present in leftmost subdomain
 
 **3. Input Processing** (`inputs.go`)
 - `Input` struct: Parses domains into components (sub, suffix, tld, etld, etc.)
+- Uses `publicsuffix` library to extract eTLD and root domain correctly
 - Variable extraction: `{{sub}}`, `{{sub1}}`, `{{suffix}}`, `{{root}}`, `{{sld}}`, etc.
 - Multi-level subdomain support (e.g., `cloud.api.example.com` → `sub=cloud`, `sub1=api`)
+- `getNValidateRootDomain()`: Validates homogeneous domains for pattern mining
 
 **4. Pattern Mining** (`internal/patternmining/`)
 - **Three-phase discovery algorithm:**
@@ -124,13 +137,14 @@ Generates all combinations of payloads across variables:
 - Early exit when no variables present in template
 
 ### Pattern Mining Workflow
-1. **Validate input:** Ensure domains share common target (e.g., `.example.com`)
-2. **Build distance table:** Compute pairwise Levenshtein distances
-3. **Phase 1 - Edit clustering:** Group by edit distance (min to max)
+1. **Validate input:** `getNValidateRootDomain()` ensures domains share common root
+2. **Build distance table:** Compute pairwise Levenshtein distances with memoization
+3. **Phase 1 - Edit clustering:** Group by edit distance (min to max) without prefix enforcement
 4. **Phase 2 - N-grams:** Generate unigrams/bigrams, cluster by prefix
-5. **Phase 3 - Prefix clustering:** Apply edit distance within prefix groups
-6. **Quality validation:** Filter patterns using threshold and ratio metrics
-7. **Generate subdomains:** Use DFA to produce strings from patterns
+5. **Phase 3 - Prefix clustering:** Apply edit distance within prefix groups for refinement
+6. **Quality validation:** `isGoodRule()` filters patterns using threshold and ratio metrics
+7. **Regex generation:** Convert clusters to regex with alternations `(a|b)` and optional groups
+8. **Generate subdomains:** DFA engine produces fixed-length strings from patterns
 
 ## Pattern Mining Modes
 
@@ -155,6 +169,46 @@ Generates all combinations of payloads across variables:
 - `-quality-ratio 25`: Max ratio of synthetic/observed subdomains
 - `-save-rules output.json`: Save discovered patterns and metadata to JSON file
 
+## Execution Flow
+
+### Mode-Based Execution
+The `Mutator.Execute()` method orchestrates parallel execution based on mode:
+
+**Default Mode:**
+1. Parse inputs → Extract variables → Validate patterns
+2. Optionally enrich payloads from input subdomains
+3. For each input × pattern combination:
+   - Replace input variables (e.g., `{{sub}}`, `{{suffix}}`)
+   - Execute ClusterBomb for payload permutations
+   - Skip patterns with missing variables
+4. Deduplicate results and write to output
+
+**Discover Mode:**
+1. Validate homogeneous domains (must share root)
+2. Initialize `Miner` with distance/quality parameters
+3. Run three-phase clustering algorithm
+4. Generate regex patterns from clusters
+5. Use DFA engine to produce subdomains
+6. Skip input domains from output (avoid duplicates)
+
+**Both Mode:**
+- Runs default and discover in parallel goroutines
+- Deduplication happens at channel level
+- Results combined before writing
+
+### Key Variables & Utilities
+
+**Variable Extraction (`util.go`):**
+- `getAllVars()`: Extract variable names from template using regex
+- `checkMissing()`: Validate all variables have values before execution
+- `getSampleMap()`: Merge input variables with payload variables for validation
+- `unsafeToBytes()`: Zero-allocation string→byte conversion for performance
+
+**Deduplication:**
+- Enabled by default (`DedupeResults = true` in `mutator.go`)
+- Uses memory-efficient dedupe from projectdiscovery/utils
+- Estimates required memory: `count * maxkeyLenInBytes`
+
 ## Common Patterns
 
 ### Adding New CLI Flags
@@ -171,6 +225,14 @@ Generates all combinations of payloads across variables:
 - **Clustering logic:** `internal/patternmining/clustering.go`
 - **Tokenization rules:** `tokenize()` in `internal/patternmining/regex.go`
 - **Quality metrics:** `isGoodRule()` in `internal/patternmining/patternmining.go`
+- **DFA operations:** `internal/dank/dank.go` (minimize, generate strings)
+
+### Working with Modes
+When adding features that interact with modes:
+1. Check `opts.Mode` in `New()` to conditionally initialize components
+2. Use goroutines in `Execute()` for parallel execution (default + discover)
+3. Remember to close channels properly in `Execute()` cleanup goroutine
+4. Mode validation happens in `Options.Validate()` with backwards-compatible defaults
 
 ## Testing Strategy
 
@@ -182,11 +244,14 @@ Generates all combinations of payloads across variables:
 ## Important Notes
 
 - **Dedupe enabled by default:** `DedupeResults = true` in `mutator.go`
-- **Prefix optimization:** ClusterBomb skips words already in leftmost subdomain
+- **Prefix optimization:** ClusterBomb skips words already in leftmost subdomain (lines 378-387 in `mutator.go`)
 - **Pattern quality critical:** Low thresholds generate millions of subdomains
-- **Distance memoization:** Pattern mining caches Levenshtein distances for performance
+- **Distance memoization:** Pattern mining caches Levenshtein distances for performance in `Miner.memo` map
 - **DFA minimization:** Three-pass Brzozowski ensures minimal automaton
 - **No breaking changes:** All pattern mining is additive; default behavior unchanged
+- **SaveRules timing:** Must be called AFTER `Execute()` to ensure mining completes (line 68-72 in `cmd/alterx/main.go`)
+- **Homogeneous domains required:** Discover/both modes validate all domains share same root via `getNValidateRootDomain()`
+- **Goroutine-safe:** Pattern mining and default mode run in separate goroutines with WaitGroup coordination
 
 ## Credits
 
@@ -202,3 +267,27 @@ Generates all combinations of payloads across variables:
 - Use `gologger` for all logging (not fmt.Println)
 - Follow Go naming conventions and project structure
 - Add tests for new features
+- Use `fasttemplate` for variable replacement (already integrated)
+- Respect memory limits via `MaxSize` option in output writing
+
+## Common Gotchas & Troubleshooting
+
+### Pattern Mining Issues
+- **"domains do not have the same root"**: All input domains must share a common root (e.g., all under `.example.com`). Use `getNValidateRootDomain()` to validate.
+- **Too many patterns generated**: Decrease `-max-distance` or increase `-pattern-threshold` and `-quality-ratio`
+- **No patterns discovered**: Increase `-max-distance` or decrease `-min-distance` to allow more clustering
+
+### ClusterBomb Performance
+- **Memory exhaustion**: Reduce payload sizes or use `-limit` to cap output
+- **Slow execution**: Check that prefix optimization is working (should skip redundant words)
+- **Expected combinations not appearing**: Verify variables exist in pattern template and payload map
+
+### Mode Selection
+- **Default mode** works without any special validation (backwards compatible)
+- **Discover/Both modes** require homogeneous domains (same root)
+- **SaveRules only works** with discover/both modes after execution completes
+
+### Testing Tips
+- Use `DryRun()` or `EstimateCount()` to validate logic without generating output
+- Test pattern mining with small domain sets first (5-10 domains)
+- For ClusterBomb testing, use simple 2-variable patterns to verify cartesian product logic

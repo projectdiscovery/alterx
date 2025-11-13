@@ -199,6 +199,8 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 	results := make(chan string, 100)
 	wg := &sync.WaitGroup{}
 
+	now := time.Now()
+
 	if m.miner != nil {
 		wg.Add(1)
 		go func() {
@@ -236,7 +238,6 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			now := time.Now()
 			for _, v := range m.Inputs {
 				varMap := getSampleMap(v.GetMap(), m.Options.Payloads)
 				for _, pattern := range m.Options.Patterns {
@@ -253,13 +254,13 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 					}
 				}
 			}
-			m.timeTaken = time.Since(now)
 		}()
 	}
 
 	go func() {
 		wg.Wait()
 		close(results)
+		m.timeTaken = time.Since(now)
 	}()
 
 	if DedupeResults {
@@ -282,7 +283,7 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 	for {
 		value, ok := <-resChan
 		if !ok {
-			gologger.Info().Msgf("Generated %v permutations in %v", m.payloadCount, m.Time())
+			gologger.Info().Msgf("Generated %v unique subdomains in %v", m.payloadCount, m.Time())
 			return nil
 		}
 		if m.Options.Limit > 0 && m.payloadCount == m.Options.Limit {

@@ -277,6 +277,26 @@ func (m *Miner) validateDomains() []string {
 			gologger.Verbose().Msgf("Rejecting malformed input: %s", host)
 			continue
 		}
+		// see: https://github.com/projectdiscovery/alterx/issues/285
+		// due to known blocking issues we add some safety check to skip certain domains
+		// this isn't silver bullet but avoids known blocking issues
+		if len(tokens[0]) > 5 {
+			// if subdomain has more than 5 levels then skip it
+			// ex: service.api.dev.home.us1.americas.example.com
+			gologger.Verbose().Msgf("Rejecting input: %s since it has more than 5 levels", host)
+			continue
+		}
+		sum := 0
+		for _, token := range tokens[0] {
+			sum += len(token)
+		}
+		// to avoid expensive computation skip any subdomain that can be tokenized into more than 10 tokens
+		if sum > 10 {
+			// ex: api1dev-home-us1..... basically even if subdomain levels are less than 5 but have too many
+			// seperators the vector length would become too long
+			gologger.Verbose().Msgf("Rejecting input: %s since it can be tokenized into more than 10 tokens", host)
+			continue
+		}
 		knownHosts = append(knownHosts, host)
 	}
 	return m.removeDuplicatesAndSort(knownHosts)

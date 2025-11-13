@@ -62,8 +62,6 @@ func main() {
 		gologger.Error().Msgf("failed to execute alterx: %v", err)
 	}
 
-	gologger.Info().Msgf("Generated %d total unique subdomains", m.PayloadCount())
-
 	// Save rules if requested (must be after Execute to ensure mining is complete)
 	if cliOpts.SaveRules != "" {
 		if err := m.SaveRules(cliOpts.SaveRules); err != nil {
