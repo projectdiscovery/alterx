@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/projectdiscovery/alterx/internal/patternmining"
@@ -94,7 +95,7 @@ type Mutator struct {
 	Options      *Options
 	payloadCount int
 	Inputs       []*Input // all processed inputs
-	timeTaken    time.Duration
+	timeTaken    int64    // atomic access only (stores nanoseconds as int64)
 	// internal or unexported variables
 	maxkeyLenInBytes int
 	rootDomain       string
@@ -260,7 +261,7 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 	go func() {
 		wg.Wait()
 		close(results)
-		m.timeTaken = time.Since(now)
+		atomic.StoreInt64(&m.timeTaken, int64(time.Since(now)))
 	}()
 
 	if DedupeResults {
@@ -464,5 +465,6 @@ func (m *Mutator) PayloadCount() int {
 
 // Time returns time taken to create permutations in seconds
 func (m *Mutator) Time() string {
-	return fmt.Sprintf("%.4fs", m.timeTaken.Seconds())
+	duration := time.Duration(atomic.LoadInt64(&m.timeTaken))
+	return fmt.Sprintf("%.4fs", duration.Seconds())
 }
