@@ -286,15 +286,15 @@ func (m *Miner) validateDomains() []string {
 			gologger.Verbose().Msgf("Rejecting input: %s since it has more than 5 levels", host)
 			continue
 		}
-		sum := 0
-		for _, token := range tokens[0] {
-			sum += len(token)
-		}
 		// to avoid expensive computation skip any subdomain that can be tokenized into more than 10 tokens
-		if sum > 10 {
+		tokenCount := 0
+		for _, tokenGroup := range tokens[0] {
+			tokenCount += len(tokenGroup)
+		}
+		if tokenCount > 10 {
 			// ex: api1dev-home-us1..... basically even if subdomain levels are less than 5 but have too many
-			// seperators the vector length would become too long
-			gologger.Verbose().Msgf("Rejecting input: %s since it can be tokenized into more than 10 tokens", host)
+			// separators the vector length would become too long
+			gologger.Verbose().Msgf("Rejecting input: %s since it has more than 10 tokens (found %d)", host, tokenCount)
 			continue
 		}
 		knownHosts = append(knownHosts, host)
