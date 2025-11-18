@@ -19,3 +19,4 @@ coverage.html
 # vendor/
 /cmd/alterx/alterx
 /alterx
+/.testing

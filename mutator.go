@@ -7,8 +7,11 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/projectdiscovery/alterx/internal/patternmining"
 	"github.com/projectdiscovery/fasttemplate"
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/utils/dedupe"
@@ -40,6 +43,51 @@ type Options struct {
 	Enrich bool
 	// MaxSize limits output data size
 	MaxSize int
+	// Mode specifies the operation mode: "default" (default), "discover" (pattern mining only), "both" (combined)
+	// Empty string defaults to "default" mode for backwards compatibility
+	Mode string
+	// MinDistance is the minimum levenshtein distance for clustering
+	MinDistance int
+	// MaxDistance is the maximum levenshtein distance for clustering
+	MaxDistance int
+	// PatternThreshold is the threshold for pattern quality filtering
+	PatternThreshold int
+	// QualityRatio is the maximum ratio of synthetic/observed for pattern validation
+	QualityRatio float64
+	// NgramsLimit limits the number of n-grams to process (0 = no limit)
+	NgramsLimit int
+	// MaxLength is the maximum pattern length
+	MaxLength int
+}
+
+func (v *Options) Validate() error {
+	// Default to "default" mode if not specified (backwards compatibility)
+	if v.Mode == "" {
+		v.Mode = "default"
+	}
+	if v.Mode != "default" && v.Mode != "discover" && v.Mode != "both" {
+		return fmt.Errorf("invalid mode: %s (must be 'default', 'discover', or 'both')", v.Mode)
+	}
+	// auto fill default values
+	if v.MinDistance == 0 {
+		v.MinDistance = 2
+	}
+	if v.MaxDistance == 0 {
+		v.MaxDistance = 10
+	}
+	if v.QualityRatio == 0 {
+		v.QualityRatio = 25
+	}
+	if v.PatternThreshold == 0 {
+		v.PatternThreshold = 500
+	}
+	if v.NgramsLimit == 0 {
+		v.NgramsLimit = 0
+	}
+	if v.MaxLength == 0 {
+		v.MaxLength = 1000
+	}
+	return nil
 }
 
 // Mutator
@@ -47,50 +95,98 @@ type Mutator struct {
 	Options      *Options
 	payloadCount int
 	Inputs       []*Input // all processed inputs
-	timeTaken    time.Duration
+	timeTaken    int64    // atomic access only (stores nanoseconds as int64)
 	// internal or unexported variables
 	maxkeyLenInBytes int
+	rootDomain       string
+	miner            *patternmining.Miner
+	miningResult     *patternmining.Result
 }
 
 // New creates and returns new mutator instance from options
 func New(opts *Options) (*Mutator, error) {
-	if len(opts.Domains) == 0 {
-		return nil, fmt.Errorf("no input provided to calculate permutations")
+	if err := opts.Validate(); err != nil {
+		return nil, err
 	}
-	if len(opts.Payloads) == 0 {
-		opts.Payloads = map[string][]string{}
-		if len(DefaultConfig.Payloads) == 0 {
-			return nil, fmt.Errorf("something went wrong, `DefaultWordList` and input wordlist are empty")
-		}
-		opts.Payloads = DefaultConfig.Payloads
-	}
-	if len(opts.Patterns) == 0 {
-		if len(DefaultConfig.Patterns) == 0 {
-			return nil, fmt.Errorf("something went wrong,`DefaultPatters` and input patterns are empty")
-		}
-		opts.Patterns = DefaultConfig.Patterns
-	}
-	// purge duplicates if any
-	for k, v := range opts.Payloads {
-		dedupe := sliceutil.Dedupe(v)
-		if len(v) != len(dedupe) {
-			gologger.Warning().Msgf("%v duplicate payloads found in %v. purging them..", len(v)-len(dedupe), k)
-			opts.Payloads[k] = dedupe
-		}
-	}
+
 	m := &Mutator{
 		Options: opts,
 	}
-	if err := m.validatePatterns(); err != nil {
-		return nil, err
+
+	if opts.Mode == "discover" || opts.Mode == "both" {
+
+		// run validation and save root domain in case of discover mode
+		rootDomain, err := getNValidateRootDomain(m.Options.Domains)
+		if err != nil {
+			return nil, err
+		}
+		m.rootDomain = rootDomain
+
+		miner := patternmining.NewMiner(&patternmining.Options{
+			Domains:          opts.Domains,
+			Target:           m.rootDomain,
+			MinDistance:      m.Options.MinDistance,
+			MaxDistance:      m.Options.MaxDistance,
+			PatternThreshold: m.Options.PatternThreshold,
+			QualityRatio:     m.Options.QualityRatio,
+			MaxLength:        m.Options.MaxLength,
+			NgramsLimit:      m.Options.NgramsLimit,
+		})
+		m.miner = miner
+
 	}
-	if err := m.prepareInputs(); err != nil {
-		return nil, err
+
+	if opts.Mode == "default" || opts.Mode == "both" {
+		// validate payloads and patterns for default and both modes
+		if len(opts.Payloads) == 0 {
+			opts.Payloads = map[string][]string{}
+			if len(DefaultConfig.Payloads) == 0 {
+				return nil, fmt.Errorf("something went wrong, `DefaultWordList` and input wordlist are empty")
+			}
+			opts.Payloads = DefaultConfig.Payloads
+		}
+		if len(opts.Patterns) == 0 {
+			if len(DefaultConfig.Patterns) == 0 {
+				return nil, fmt.Errorf("something went wrong,`DefaultPatters` and input patterns are empty")
+			}
+			opts.Patterns = DefaultConfig.Patterns
+		}
+		// purge duplicates if any
+		for k, v := range opts.Payloads {
+			dedupe := sliceutil.Dedupe(v)
+			if len(v) != len(dedupe) {
+				gologger.Warning().Msgf("%v duplicate payloads found in %v. purging them..", len(v)-len(dedupe), k)
+				opts.Payloads[k] = dedupe
+			}
+		}
+
+		if err := m.validatePatterns(); err != nil {
+			return nil, err
+		}
+		if err := m.prepareInputs(); err != nil {
+			return nil, err
+		}
+		if opts.Enrich {
+			m.enrichPayloads()
+		}
 	}
-	if opts.Enrich {
-		m.enrichPayloads()
-	}
+
 	return m, nil
+}
+
+// SaveRules saves pattern mining result to a file
+func (m *Mutator) SaveRules(filename string) error {
+	if m.miner == nil {
+		return fmt.Errorf("pattern mining is not enabled")
+	}
+	if m.miningResult == nil {
+		return fmt.Errorf("pattern mining result is not available")
+	}
+	if err := m.miner.SaveRules(m.miningResult, filename); err != nil {
+		return err
+	}
+	gologger.Info().Msgf("Saved %d patterns to %s", len(m.miningResult.Patterns), filename)
+	return nil
 }
 
 // Execute calculates all permutations using input wordlist and patterns
@@ -101,28 +197,71 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 		count := m.EstimateCount()
 		maxBytes = count * m.maxkeyLenInBytes
 	}
+	results := make(chan string, 100)
+	wg := &sync.WaitGroup{}
 
-	results := make(chan string, len(m.Options.Patterns))
-	go func() {
-		now := time.Now()
-		for _, v := range m.Inputs {
-			varMap := getSampleMap(v.GetMap(), m.Options.Payloads)
-			for _, pattern := range m.Options.Patterns {
-				if err := checkMissing(pattern, varMap); err == nil {
-					statement := Replace(pattern, v.GetMap())
-					select {
-					case <-ctx.Done():
-						return
-					default:
-						m.clusterBomb(statement, results)
+	now := time.Now()
+
+	if m.miner != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			// Run pattern mining
+			gologger.Info().Msgf("Running pattern mining on %d domains...", len(m.Options.Domains))
+			result, err := m.miner.Mine()
+			if err != nil {
+				gologger.Error().Msgf("pattern mining failed: %v", err)
+				return
+			}
+			m.miningResult = result
+			gologger.Info().Msgf("Discovered %d patterns from input domains", len(result.Patterns))
+
+			var seen = make(map[string]bool)
+			for _, sub := range m.Options.Domains {
+				seen[sub] = true
+			}
+			// In discover mode, only use mined patterns
+			generated := m.miner.GenerateFromPatterns(m.miningResult.Patterns)
+			for _, subdomain := range generated {
+				if seen[subdomain] {
+					// skip the input subdomains
+					// regulator algo has tendency to generate input subdomains as patterns
+					continue
+				}
+				seen[subdomain] = true
+				results <- subdomain
+			}
+		}()
+	}
+
+	if len(m.Inputs) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _, v := range m.Inputs {
+				varMap := getSampleMap(v.GetMap(), m.Options.Payloads)
+				for _, pattern := range m.Options.Patterns {
+					if err := checkMissing(pattern, varMap); err == nil {
+						statement := Replace(pattern, v.GetMap())
+						select {
+						case <-ctx.Done():
+							return
+						default:
+							m.clusterBomb(statement, results)
+						}
+					} else {
+						gologger.Warning().Msgf("%v : failed to evaluate pattern %v. skipping", err.Error(), pattern)
 					}
-				} else {
-					gologger.Warning().Msgf("%v : failed to evaluate pattern %v. skipping", err.Error(), pattern)
 				}
 			}
-		}
-		m.timeTaken = time.Since(now)
+		}()
+	}
+
+	go func() {
+		wg.Wait()
 		close(results)
+		atomic.StoreInt64(&m.timeTaken, int64(time.Since(now)))
 	}()
 
 	if DedupeResults {
@@ -145,7 +284,7 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 	for {
 		value, ok := <-resChan
 		if !ok {
-			gologger.Info().Msgf("Generated %v permutations in %v", m.payloadCount, m.Time())
+			gologger.Info().Msgf("Generated %v unique subdomains in %v", m.payloadCount, m.Time())
 			return nil
 		}
 		if m.Options.Limit > 0 && m.payloadCount == m.Options.Limit {
@@ -206,6 +345,9 @@ func (m *Mutator) EstimateCount() int {
 				}
 			}
 		}
+	}
+	if m.miner != nil && m.miningResult != nil {
+		counter += int(m.miner.EstimateCount(m.miningResult.Patterns))
 	}
 	return counter
 }
@@ -323,5 +465,6 @@ func (m *Mutator) PayloadCount() int {
 
 // Time returns time taken to create permutations in seconds
 func (m *Mutator) Time() string {
-	return fmt.Sprintf("%.4fs", m.timeTaken.Seconds())
+	duration := time.Duration(atomic.LoadInt64(&m.timeTaken))
+	return fmt.Sprintf("%.4fs", duration.Seconds())
 }
