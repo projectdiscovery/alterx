@@ -431,28 +431,78 @@ func (m *Mutator) validatePatterns() error {
 // enrichPayloads extract possible words and adds them to default wordlist
 func (m *Mutator) enrichPayloads() {
 	var temp bytes.Buffer
-	for _, v := range m.Inputs {
+	var maxInputsToProcess int
+	var maxWordsToExtract int
+	var maxNumbersToExtract int
+
+	inputs := m.Inputs
+
+	// NOTE(dwisiswant0): Scale the number of inputs to process based on limit
+	// or max-size options to generate additional payloads.
+	if m.Options.Limit > 0 {
+		maxInputsToProcess = m.Options.Limit
+		maxWordsToExtract = m.Options.Limit
+		maxNumbersToExtract = m.Options.Limit
+	}
+	if m.Options.MaxSize > 0 && m.Options.MaxSize <= len(inputs) {
+		maxInputsToProcess = m.Options.MaxSize
+		maxWordsToExtract = m.Options.MaxSize
+		maxNumbersToExtract = m.Options.MaxSize
+	}
+
+	if len(inputs) > maxInputsToProcess && maxInputsToProcess > 0 {
+		inputs = inputs[:maxInputsToProcess]
+	}
+
+	for _, v := range inputs {
 		temp.WriteString(v.Sub + " ")
 		if len(v.MultiLevel) > 0 {
 			temp.WriteString(strings.Join(v.MultiLevel, " "))
 		}
 	}
+
 	numbers := extractNumbers.FindAllString(temp.String(), -1)
 	extraWords := extractWords.FindAllString(temp.String(), -1)
 	extraWordsOnly := extractWordsOnly.FindAllString(temp.String(), -1)
+
+	var filteredWords []string
+	minWordLength := 3
+	for _, word := range extraWords {
+		if len(word) >= minWordLength {
+			filteredWords = append(filteredWords, word)
+		}
+	}
+	extraWords = filteredWords
+
+	if len(numbers) > maxNumbersToExtract && maxNumbersToExtract > 0 {
+		numbers = numbers[:maxNumbersToExtract]
+	}
+
 	if len(extraWordsOnly) > 0 {
 		extraWords = append(extraWords, extraWordsOnly...)
 		extraWords = sliceutil.Dedupe(extraWords)
 	}
 
+	if len(extraWords) > maxWordsToExtract && maxWordsToExtract > 0 {
+		extraWords = extraWords[:maxWordsToExtract]
+	}
+
 	if len(m.Options.Payloads["word"]) > 0 {
 		extraWords = append(extraWords, m.Options.Payloads["word"]...)
 		m.Options.Payloads["word"] = sliceutil.Dedupe(extraWords)
+	} else {
+		m.Options.Payloads["word"] = extraWords
 	}
+
 	if len(m.Options.Payloads["number"]) > 0 {
 		numbers = append(numbers, m.Options.Payloads["number"]...)
 		m.Options.Payloads["number"] = sliceutil.Dedupe(numbers)
+	} else {
+		m.Options.Payloads["number"] = numbers
 	}
+
+	gologger.Debug().Msgf("Enrichment added %d words and %d numbers",
+		len(m.Options.Payloads["word"]), len(m.Options.Payloads["number"]))
 }
 
 // PayloadCount returns total estimated payloads count
