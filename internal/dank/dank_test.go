@@ -47,6 +47,17 @@ func TestGenerateAtFixedLengthWithLimit_NoCap(t *testing.T) {
 	}
 }
 
+func TestGenerateAtFixedLengthWithLimit_NegativeFixedLen(t *testing.T) {
+	d := NewDankEncoder(smallRegex, 16)
+	got, err := d.GenerateAtFixedLengthWithLimit(-1, 10)
+	if !errors.Is(err, ErrInvalidFixedLength) {
+		t.Fatalf("expected ErrInvalidFixedLength for negative fixedLen, got %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty slice on validation failure, got %v", got)
+	}
+}
+
 func TestGenerateAtFixedLengthWithContext_Cancellation(t *testing.T) {
 	d := NewDankEncoder(explodingRegex, 16)
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)

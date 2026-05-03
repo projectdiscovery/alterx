@@ -484,9 +484,10 @@ func (d *DankEncoder) GenerateAtFixedLength(fixedLen int) []string {
 }
 
 // GenerateAtFixedLengthWithLimit returns up to maxResults strings of exactly
-// fixedLen. If the DFS produces more than maxResults results, generation
-// stops early and ErrResultLimitReached is returned alongside the partial
-// (still sorted) result slice. A maxResults <= 0 disables the cap.
+// fixedLen. Generation stops once the result count reaches maxResults — i.e.
+// the returned slice contains exactly maxResults entries when truncated — and
+// ErrResultLimitReached is returned alongside the (sorted) partial result
+// slice. A maxResults <= 0 disables the cap.
 func (d *DankEncoder) GenerateAtFixedLengthWithLimit(fixedLen, maxResults int) ([]string, error) {
 	return d.generateAtFixedLength(context.Background(), fixedLen, maxResults)
 }
@@ -502,10 +503,18 @@ func (d *DankEncoder) GenerateAtFixedLengthWithContext(ctx context.Context, fixe
 	return d.generateAtFixedLength(ctx, fixedLen, maxResults)
 }
 
+// ErrInvalidFixedLength is returned by the GenerateAtFixedLength* family when
+// fixedLen is negative, which would otherwise cause the DFS to recurse
+// indefinitely with an ever-decreasing remaining counter.
+var ErrInvalidFixedLength = errors.New("dank: fixedLen must be >= 0")
+
 // generateAtFixedLength is the shared implementation behind the three public
 // generators. ctx and maxResults can each be supplied independently
 // (background / 0) to recover the historical no-limit behaviour.
 func (d *DankEncoder) generateAtFixedLength(ctx context.Context, fixedLen, maxResults int) ([]string, error) {
+	if fixedLen < 0 {
+		return nil, ErrInvalidFixedLength
+	}
 	var (
 		results []string
 		err     error
