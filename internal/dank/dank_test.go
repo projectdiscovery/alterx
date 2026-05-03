@@ -58,6 +58,20 @@ func TestGenerateAtFixedLengthWithLimit_NegativeFixedLen(t *testing.T) {
 	}
 }
 
+func TestGenerateAtFixedLengthWithContext_NilContext(t *testing.T) {
+	d := NewDankEncoder(smallRegex, 16)
+	// Passing a nil context must not panic; the public entry point normalises
+	// it to context.Background() before reaching the recursive ctx.Err() call.
+	got, err := d.GenerateAtFixedLengthWithContext(nil, 2, 0)
+	if err != nil {
+		t.Fatalf("expected nil error with nil ctx, got %v", err)
+	}
+	want := []string{"a0", "a1", "a2"}
+	if !equalStringSlices(got, want) {
+		t.Fatalf("GenerateAtFixedLengthWithContext(nil, 2, 0) = %v, want %v", got, want)
+	}
+}
+
 func TestGenerateAtFixedLengthWithContext_Cancellation(t *testing.T) {
 	d := NewDankEncoder(explodingRegex, 16)
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)

@@ -478,6 +478,11 @@ func (d *DankEncoder) NumWords(minLen, maxLen int) int64 {
 // inputs that produce a very large language, prefer
 // GenerateAtFixedLengthWithLimit or GenerateAtFixedLengthWithContext.
 // See https://github.com/projectdiscovery/alterx/issues/285.
+//
+// A negative fixedLen returns an empty slice (rather than recursing
+// forever); use GenerateAtFixedLengthWithLimit or
+// GenerateAtFixedLengthWithContext if you need to surface
+// ErrInvalidFixedLength explicitly.
 func (d *DankEncoder) GenerateAtFixedLength(fixedLen int) []string {
 	results, _ := d.generateAtFixedLength(context.Background(), fixedLen, 0)
 	return results
@@ -500,6 +505,9 @@ func (d *DankEncoder) GenerateAtFixedLengthWithLimit(fixedLen, maxResults int) (
 // ctx for cancellation. The partial result slice (sorted) is returned even
 // when ctx.Err() / ErrResultLimitReached fires.
 func (d *DankEncoder) GenerateAtFixedLengthWithContext(ctx context.Context, fixedLen, maxResults int) ([]string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return d.generateAtFixedLength(ctx, fixedLen, maxResults)
 }
 
