@@ -62,7 +62,10 @@ func TestGenerateAtFixedLengthWithContext_NilContext(t *testing.T) {
 	d := NewDankEncoder(smallRegex, 16)
 	// Passing a nil context must not panic; the public entry point normalises
 	// it to context.Background() before reaching the recursive ctx.Err() call.
-	got, err := d.GenerateAtFixedLengthWithContext(nil, 2, 0)
+	// Assign through a typed var so staticcheck SA1012 doesn't flag the
+	// literal nil at the call site - we are explicitly exercising the guard.
+	var nilCtx context.Context
+	got, err := d.GenerateAtFixedLengthWithContext(nilCtx, 2, 0)
 	if err != nil {
 		t.Fatalf("expected nil error with nil ctx, got %v", err)
 	}
