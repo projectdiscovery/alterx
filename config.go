@@ -33,20 +33,24 @@ func NewConfig(filePath string) (*Config, error) {
 		return nil, err
 	}
 
-	var words []string
-	for _, p := range cfg.Payloads["word"] {
-		if !fileutil.FileExists(p) {
-			words = append(words, p)
-		} else {
-			wordBytes, err := os.ReadFile(p)
-			if err != nil {
-				gologger.Error().Msgf("failed to read wordlist from %v got %v", p, err)
-				continue
+	// Process file paths for all payload keys
+	for payloadKey, payloadValues := range cfg.Payloads {
+		var processedValues []string
+		for _, p := range payloadValues {
+			if !fileutil.FileExists(p) {
+				processedValues = append(processedValues, p)
+			} else {
+				wordBytes, err := os.ReadFile(p)
+				if err != nil {
+					gologger.Error().Msgf("failed to read wordlist from %v got %v", p, err)
+					continue
+				}
+				processedValues = append(processedValues, strings.Fields(string(wordBytes))...)
 			}
-			words = append(words, strings.Fields(string(wordBytes))...)
 		}
+		cfg.Payloads[payloadKey] = processedValues
 	}
-	cfg.Payloads["word"] = words
+
 	return &cfg, nil
 }
 

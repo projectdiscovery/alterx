@@ -20,5 +20,7 @@ func main() {
 	if err != nil {
 		gologger.Fatal().Msg(err.Error())
 	}
-	m.ExecuteWithWriter(os.Stdout)
+	if err := m.ExecuteWithWriter(os.Stdout); err != nil {
+		gologger.Fatal().Msgf("failed to execute: %v", err)
+	}
 }
