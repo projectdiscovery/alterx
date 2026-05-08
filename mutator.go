@@ -5,13 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/projectdiscovery/fasttemplate"
 	"github.com/projectdiscovery/gologger"
-	"github.com/projectdiscovery/utils/dedupe"
 	errorutil "github.com/projectdiscovery/utils/errors"
 	sliceutil "github.com/projectdiscovery/utils/slice"
 )
@@ -96,14 +96,9 @@ func New(opts *Options) (*Mutator, error) {
 // Execute calculates all permutations using input wordlist and patterns
 // and writes them to a string channel
 func (m *Mutator) Execute(ctx context.Context) <-chan string {
-	var maxBytes int
-	if DedupeResults {
-		count := m.EstimateCount()
-		maxBytes = count * m.maxkeyLenInBytes
-	}
-
 	results := make(chan string, len(m.Options.Patterns))
 	go func() {
+		defer close(results)
 		now := time.Now()
 		for _, v := range m.Inputs {
 			varMap := getSampleMap(v.GetMap(), m.Options.Payloads)
@@ -114,7 +109,7 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 					case <-ctx.Done():
 						return
 					default:
-						m.clusterBomb(statement, results)
+						m.clusterBomb(ctx, statement, results)
 					}
 				} else {
 					gologger.Warning().Msgf("%v : failed to evaluate pattern %v. skipping", err.Error(), pattern)
@@ -122,16 +117,43 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 			}
 		}
 		m.timeTaken = time.Since(now)
-		close(results)
 	}()
 
-	if DedupeResults {
-		// drain results
-		d := dedupe.NewDedupe(results, maxBytes)
-		d.Drain()
-		return d.GetResults()
+	if !DedupeResults {
+		return results
 	}
-	return results
+
+	// Streaming dedupe so Execute returns before the full Cartesian product is materialized.
+	// Consumers can cancel ctx (e.g. when -limit or -max-size is satisfied) to stop generation early.
+	out := make(chan string, 100)
+	go func() {
+		defer close(out)
+		seen := make(map[string]struct{})
+		for {
+			select {
+			case <-ctx.Done():
+				for range results {
+				}
+				return
+			case val, ok := <-results:
+				if !ok {
+					return
+				}
+				if _, dup := seen[val]; dup {
+					continue
+				}
+				seen[val] = struct{}{}
+				select {
+				case <-ctx.Done():
+					for range results {
+					}
+					return
+				case out <- val:
+				}
+			}
+		}
+	}()
+	return out
 }
 
 // ExecuteWithWriter executes Mutator and writes results directly to type that implements io.Writer interface
@@ -139,21 +161,29 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 	if Writer == nil {
 		return errorutil.NewWithTag("alterx", "writer destination cannot be nil")
 	}
-	resChan := m.Execute(context.TODO())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resChan := m.Execute(ctx)
 	m.payloadCount = 0
 	maxFileSize := m.Options.MaxSize
+	hasLineLimit := m.Options.Limit > 0
+	hasByteBudget := m.Options.MaxSize < math.MaxInt
+
 	for {
 		value, ok := <-resChan
 		if !ok {
 			gologger.Info().Msgf("Generated %v permutations in %v", m.payloadCount, m.Time())
 			return nil
 		}
-		if m.Options.Limit > 0 && m.payloadCount == m.Options.Limit {
-			// we can't early exit, due to abstraction we have to conclude the elaboration to drain all dedupers
+		if hasLineLimit && m.payloadCount == m.Options.Limit {
+			cancel()
 			continue
 		}
 		if maxFileSize <= 0 {
-			// drain all dedupers when max-file size reached
+			if hasByteBudget {
+				cancel()
+			}
 			continue
 		}
 
@@ -164,6 +194,9 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 		outputData := []byte(value + "\n")
 		if len(outputData) > maxFileSize {
 			maxFileSize = 0
+			if hasByteBudget {
+				cancel()
+			}
 			continue
 		}
 
@@ -171,9 +204,12 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 		if err != nil {
 			return err
 		}
-		// update maxFileSize limit after each write
 		maxFileSize -= n
 		m.payloadCount++
+
+		if hasLineLimit && m.payloadCount == m.Options.Limit {
+			cancel()
+		}
 	}
 }
 
@@ -222,14 +258,18 @@ func (m *Mutator) DryRun() int {
 }
 
 // clusterBomb calculates all payloads of clusterbomb attack and sends them to result channel
-func (m *Mutator) clusterBomb(template string, results chan string) {
+func (m *Mutator) clusterBomb(ctx context.Context, template string, results chan string) {
 	// Early Exit: this is what saves clusterBomb from stackoverflows and reduces
 	// n*len(n) iterations and n recursions
 	varsUsed := getAllVars(template)
 	if len(varsUsed) == 0 {
 		// clusterBomb is not required
 		// just send existing template as result and exit
-		results <- template
+		select {
+		case <-ctx.Done():
+			return
+		case results <- template:
+		}
 		return
 	}
 	payloadSet := map[string][]string{}
@@ -249,10 +289,15 @@ func (m *Mutator) clusterBomb(template string, results chan string) {
 	payloads := NewIndexMap(payloadSet)
 	// in clusterBomb attack no of payloads generated are
 	// len(first_set)*len(second_set)*len(third_set)....
-	callbackFunc := func(varMap map[string]interface{}) {
-		results <- Replace(template, varMap)
+	callbackFunc := func(varMap map[string]interface{}) bool {
+		select {
+		case <-ctx.Done():
+			return false
+		case results <- Replace(template, varMap):
+			return true
+		}
 	}
-	ClusterBomb(payloads, callbackFunc, []string{})
+	ClusterBomb(ctx, payloads, callbackFunc, []string{})
 }
 
 // prepares input and patterns and calculates estimations
@@ -289,78 +334,28 @@ func (m *Mutator) validatePatterns() error {
 // enrichPayloads extract possible words and adds them to default wordlist
 func (m *Mutator) enrichPayloads() {
 	var temp bytes.Buffer
-	var maxInputsToProcess int
-	var maxWordsToExtract int
-	var maxNumbersToExtract int
-
-	inputs := m.Inputs
-
-	// NOTE(dwisiswant0): Scale the number of inputs to process based on limit
-	// or max-size options to generate additional payloads.
-	if m.Options.Limit > 0 {
-		maxInputsToProcess = m.Options.Limit
-		maxWordsToExtract = m.Options.Limit
-		maxNumbersToExtract = m.Options.Limit
-	}
-	if m.Options.MaxSize > 0 && m.Options.MaxSize <= len(inputs) {
-		maxInputsToProcess = m.Options.MaxSize
-		maxWordsToExtract = m.Options.MaxSize
-		maxNumbersToExtract = m.Options.MaxSize
-	}
-
-	if len(inputs) > maxInputsToProcess && maxInputsToProcess > 0 {
-		inputs = inputs[:maxInputsToProcess]
-	}
-
-	for _, v := range inputs {
+	for _, v := range m.Inputs {
 		temp.WriteString(v.Sub + " ")
 		if len(v.MultiLevel) > 0 {
 			temp.WriteString(strings.Join(v.MultiLevel, " "))
 		}
 	}
-
 	numbers := extractNumbers.FindAllString(temp.String(), -1)
 	extraWords := extractWords.FindAllString(temp.String(), -1)
 	extraWordsOnly := extractWordsOnly.FindAllString(temp.String(), -1)
-
-	var filteredWords []string
-	minWordLength := 3
-	for _, word := range extraWords {
-		if len(word) >= minWordLength {
-			filteredWords = append(filteredWords, word)
-		}
-	}
-	extraWords = filteredWords
-
-	if len(numbers) > maxNumbersToExtract && maxNumbersToExtract > 0 {
-		numbers = numbers[:maxNumbersToExtract]
-	}
-
 	if len(extraWordsOnly) > 0 {
 		extraWords = append(extraWords, extraWordsOnly...)
 		extraWords = sliceutil.Dedupe(extraWords)
 	}
 
-	if len(extraWords) > maxWordsToExtract && maxWordsToExtract > 0 {
-		extraWords = extraWords[:maxWordsToExtract]
-	}
-
 	if len(m.Options.Payloads["word"]) > 0 {
 		extraWords = append(extraWords, m.Options.Payloads["word"]...)
 		m.Options.Payloads["word"] = sliceutil.Dedupe(extraWords)
-	} else {
-		m.Options.Payloads["word"] = extraWords
 	}
-
 	if len(m.Options.Payloads["number"]) > 0 {
 		numbers = append(numbers, m.Options.Payloads["number"]...)
 		m.Options.Payloads["number"] = sliceutil.Dedupe(numbers)
-	} else {
-		m.Options.Payloads["number"] = numbers
 	}
-
-	gologger.Debug().Msgf("Enrichment added %d words and %d numbers",
-		len(m.Options.Payloads["word"]), len(m.Options.Payloads["number"]))
 }
 
 // PayloadCount returns total estimated payloads count

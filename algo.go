@@ -1,7 +1,12 @@
 package alterx
 
+import "context"
+
+// ClusterBombCallback is invoked for each permutation; return false to abort generation.
+type ClusterBombCallback func(varMap map[string]interface{}) bool
+
 // Nth Order ClusterBomb with variable length array/values
-func ClusterBomb(payloads *IndexMap, callback func(varMap map[string]interface{}), Vector []string) {
+func ClusterBomb(ctx context.Context, payloads *IndexMap, callback ClusterBombCallback, Vector []string) {
 	// The Goal of implementation is to reduce number of arbitary values by constructing a vector
 
 	// Algorithm
@@ -18,6 +23,10 @@ func ClusterBomb(payloads *IndexMap, callback func(varMap map[string]interface{}
 	// step 4) At end of recursion len(Vector) == len(payloads).Cap() - 1
 	// which translates that Vn = {r0,r1,...,rn} and only rn is missing
 	// in this case/situation iterate over all possible values of rn i.e payload.GetNth(n)
+	if ctx.Err() != nil {
+		return
+	}
+
 	if len(Vector) == payloads.Cap()-1 {
 		// end of vector
 		vectorMap := map[string]interface{}{}
@@ -28,8 +37,15 @@ func ClusterBomb(payloads *IndexMap, callback func(varMap map[string]interface{}
 		// one element a.k.a last element is missing from ^ map
 		index := len(Vector)
 		for _, elem := range payloads.GetNth(index) {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			vectorMap[payloads.KeyAtNth(index)] = elem
-			callback(vectorMap)
+			if !callback(vectorMap) {
+				return
+			}
 		}
 		return
 	}
@@ -39,12 +55,17 @@ func ClusterBomb(payloads *IndexMap, callback func(varMap map[string]interface{}
 	// if Vector is empty or at 1st index fix iterate over xth position
 	index := len(Vector)
 	for _, v := range payloads.GetNth(index) {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 		var tmp []string
 		if len(Vector) > 0 {
 			tmp = append(tmp, Vector...)
 		}
 		tmp = append(tmp, v)
-		ClusterBomb(payloads, callback, tmp) // Recursion
+		ClusterBomb(ctx, payloads, callback, tmp) // Recursion
 	}
 }
 
