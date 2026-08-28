@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"strings"
 	"sync"
@@ -14,7 +15,6 @@ import (
 	"github.com/projectdiscovery/alterx/internal/patternmining"
 	"github.com/projectdiscovery/fasttemplate"
 	"github.com/projectdiscovery/gologger"
-	"github.com/projectdiscovery/utils/dedupe"
 	errorutil "github.com/projectdiscovery/utils/errors"
 	sliceutil "github.com/projectdiscovery/utils/slice"
 )
@@ -192,11 +192,6 @@ func (m *Mutator) SaveRules(filename string) error {
 // Execute calculates all permutations using input wordlist and patterns
 // and writes them to a string channel
 func (m *Mutator) Execute(ctx context.Context) <-chan string {
-	var maxBytes int
-	if DedupeResults {
-		count := m.EstimateCount()
-		maxBytes = count * m.maxkeyLenInBytes
-	}
 	results := make(chan string, 100)
 	wg := &sync.WaitGroup{}
 
@@ -207,7 +202,6 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 		go func() {
 			defer wg.Done()
 
-			// Run pattern mining
 			gologger.Info().Msgf("Running pattern mining on %d domains...", len(m.Options.Domains))
 			result, err := m.miner.Mine()
 			if err != nil {
@@ -217,20 +211,21 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 			m.miningResult = result
 			gologger.Info().Msgf("Discovered %d patterns from input domains", len(result.Patterns))
 
-			var seen = make(map[string]bool)
+			seen := make(map[string]bool)
 			for _, sub := range m.Options.Domains {
 				seen[sub] = true
 			}
-			// In discover mode, only use mined patterns
 			generated := m.miner.GenerateFromPatterns(m.miningResult.Patterns)
 			for _, subdomain := range generated {
 				if seen[subdomain] {
-					// skip the input subdomains
-					// regulator algo has tendency to generate input subdomains as patterns
 					continue
 				}
 				seen[subdomain] = true
-				results <- subdomain
+				select {
+				case <-ctx.Done():
+					return
+				case results <- subdomain:
+				}
 			}
 		}()
 	}
@@ -248,7 +243,7 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 						case <-ctx.Done():
 							return
 						default:
-							m.clusterBomb(statement, results)
+							m.clusterBomb(ctx, statement, results)
 						}
 					} else {
 						gologger.Warning().Msgf("%v : failed to evaluate pattern %v. skipping", err.Error(), pattern)
@@ -264,13 +259,41 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 		atomic.StoreInt64(&m.timeTaken, int64(time.Since(now)))
 	}()
 
-	if DedupeResults {
-		// drain results
-		d := dedupe.NewDedupe(results, maxBytes)
-		d.Drain()
-		return d.GetResults()
+	if !DedupeResults {
+		return results
 	}
-	return results
+
+	// Streaming dedupe so Execute returns before the full Cartesian product is materialized.
+	// Consumers can cancel ctx (e.g. when -limit or -max-size is satisfied) to stop generation early.
+	out := make(chan string, 100)
+	go func() {
+		defer close(out)
+		seen := make(map[string]struct{})
+		for {
+			select {
+			case <-ctx.Done():
+				for range results {
+				}
+				return
+			case val, ok := <-results:
+				if !ok {
+					return
+				}
+				if _, dup := seen[val]; dup {
+					continue
+				}
+				seen[val] = struct{}{}
+				select {
+				case <-ctx.Done():
+					for range results {
+					}
+					return
+				case out <- val:
+				}
+			}
+		}
+	}()
+	return out
 }
 
 // ExecuteWithWriter executes Mutator and writes results directly to type that implements io.Writer interface
@@ -278,21 +301,29 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 	if Writer == nil {
 		return errorutil.NewWithTag("alterx", "writer destination cannot be nil")
 	}
-	resChan := m.Execute(context.TODO())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resChan := m.Execute(ctx)
 	m.payloadCount = 0
 	maxFileSize := m.Options.MaxSize
+	hasLineLimit := m.Options.Limit > 0
+	hasByteBudget := m.Options.MaxSize < math.MaxInt
+
 	for {
 		value, ok := <-resChan
 		if !ok {
 			gologger.Info().Msgf("Generated %v unique subdomains in %v", m.payloadCount, m.Time())
 			return nil
 		}
-		if m.Options.Limit > 0 && m.payloadCount == m.Options.Limit {
-			// we can't early exit, due to abstraction we have to conclude the elaboration to drain all dedupers
+		if hasLineLimit && m.payloadCount == m.Options.Limit {
+			cancel()
 			continue
 		}
 		if maxFileSize <= 0 {
-			// drain all dedupers when max-file size reached
+			if hasByteBudget {
+				cancel()
+			}
 			continue
 		}
 
@@ -303,6 +334,9 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 		outputData := []byte(value + "\n")
 		if len(outputData) > maxFileSize {
 			maxFileSize = 0
+			if hasByteBudget {
+				cancel()
+			}
 			continue
 		}
 
@@ -310,9 +344,12 @@ func (m *Mutator) ExecuteWithWriter(Writer io.Writer) error {
 		if err != nil {
 			return err
 		}
-		// update maxFileSize limit after each write
 		maxFileSize -= n
 		m.payloadCount++
+
+		if hasLineLimit && m.payloadCount == m.Options.Limit {
+			cancel()
+		}
 	}
 }
 
@@ -364,14 +401,18 @@ func (m *Mutator) DryRun() int {
 }
 
 // clusterBomb calculates all payloads of clusterbomb attack and sends them to result channel
-func (m *Mutator) clusterBomb(template string, results chan string) {
+func (m *Mutator) clusterBomb(ctx context.Context, template string, results chan string) {
 	// Early Exit: this is what saves clusterBomb from stackoverflows and reduces
 	// n*len(n) iterations and n recursions
 	varsUsed := getAllVars(template)
 	if len(varsUsed) == 0 {
 		// clusterBomb is not required
 		// just send existing template as result and exit
-		results <- template
+		select {
+		case <-ctx.Done():
+			return
+		case results <- template:
+		}
 		return
 	}
 	payloadSet := map[string][]string{}
@@ -391,10 +432,15 @@ func (m *Mutator) clusterBomb(template string, results chan string) {
 	payloads := NewIndexMap(payloadSet)
 	// in clusterBomb attack no of payloads generated are
 	// len(first_set)*len(second_set)*len(third_set)....
-	callbackFunc := func(varMap map[string]interface{}) {
-		results <- Replace(template, varMap)
+	callbackFunc := func(varMap map[string]interface{}) bool {
+		select {
+		case <-ctx.Done():
+			return false
+		case results <- Replace(template, varMap):
+			return true
+		}
 	}
-	ClusterBomb(payloads, callbackFunc, []string{})
+	ClusterBomb(ctx, payloads, callbackFunc, []string{})
 }
 
 // prepares input and patterns and calculates estimations
