@@ -134,8 +134,8 @@ func ParseFlags() *Options {
 		}
 	}
 
-	// read from stdin
-	if fileutil.HasStdin() {
+	// Use stdin only when no domains were loaded from flags or config.
+	if len(opts.Domains) == 0 && fileutil.HasStdin() {
 		bin, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			gologger.Error().Msgf("failed to read input from stdin got %v", err)
