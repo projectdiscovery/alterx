@@ -1,4 +1,4 @@
-FROM alpine:3.19.0
+FROM alpine:latest
 
 LABEL org.opencontainers.image.authors="ProjectDiscovery"
 LABEL org.opencontainers.image.description="Fast and customizable subdomain wordlist generator using DSL"
