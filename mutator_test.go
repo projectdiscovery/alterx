@@ -49,3 +49,21 @@ func TestMutatorResults(t *testing.T) {
 	count := strings.Split(strings.TrimSpace(buff.String()), "\n")
 	require.EqualValues(t, 80, len(count), buff.String())
 }
+
+func TestMutatorLineLimit(t *testing.T) {
+	opts := &Options{
+		Domains: []string{"api.scanme.sh", "chaos.scanme.sh", "nuclei.scanme.sh", "cloud.nuclei.scanme.sh"},
+		Limit:   5,
+	}
+	opts.Patterns = testConfig.Patterns
+	opts.Payloads = testConfig.Payloads
+	opts.MaxSize = math.MaxInt
+	m, err := New(opts)
+	require.Nil(t, err)
+	var buff bytes.Buffer
+	err = m.ExecuteWithWriter(&buff)
+	require.Nil(t, err)
+	lines := strings.Split(strings.TrimSpace(buff.String()), "\n")
+	require.EqualValues(t, 5, len(lines))
+	require.EqualValues(t, 5, m.payloadCount)
+}
