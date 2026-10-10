@@ -13,8 +13,15 @@ func main() {
 
 	cliOpts := runner.ParseFlags()
 
-	// Write output with deduplication
-	output := getOutputWriter(cliOpts.Output)
+	output, closer, err := newOutputWriter(cliOpts.Output, os.Stdout)
+	if err != nil {
+		gologger.Fatal().Msgf("failed to open output file %v got %v", cliOpts.Output, err)
+	}
+	defer func() {
+		if cerr := closer.Close(); cerr != nil {
+			gologger.Error().Msgf("failed to close output file: %v", cerr)
+		}
+	}()
 
 	// Build alterx options with all modes supported
 	alterOpts := alterx.Options{
@@ -70,14 +77,14 @@ func main() {
 	}
 }
 
-// getOutputWriter returns the appropriate output writer
-func getOutputWriter(outputPath string) io.Writer {
-	if outputPath != "" {
-		fs, err := os.OpenFile(outputPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		if err != nil {
-			gologger.Fatal().Msgf("failed to open output file %v got %v", outputPath, err)
-		}
-		return fs
+// newOutputWriter writes results to stdout, and also to outputPath when set.
+func newOutputWriter(outputPath string, stdout io.Writer) (io.Writer, io.Closer, error) {
+	if outputPath == "" {
+		return stdout, io.NopCloser(nil), nil
 	}
-	return os.Stdout
+	fs, err := os.OpenFile(outputPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return nil, nil, err
+	}
+	return io.MultiWriter(stdout, fs), fs, nil
 }
