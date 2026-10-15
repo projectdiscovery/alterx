@@ -1,6 +1,7 @@
 package dank
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"regexp"
@@ -466,42 +467,98 @@ func (d *DankEncoder) NumWords(minLen, maxLen int) int64 {
 
 // GenerateAtFixedLength returns all strings of exactly fixedLen
 func (d *DankEncoder) GenerateAtFixedLength(fixedLen int) []string {
-	var results []string
-	d.dfsGenerateFixed(0, "", fixedLen, &results)
-	sort.Strings(results)
+	results, _ := d.GenerateAtFixedLengthWithContextAndLimit(context.Background(), fixedLen, 0)
 	return results
 }
 
-// dfsGenerateFixed generates only strings of exact length
-func (d *DankEncoder) dfsGenerateFixed(state int, curr string, remaining int, results *[]string) {
+// GenerateAtFixedLengthWithContext returns all strings of exactly fixedLen with context cancellation support
+func (d *DankEncoder) GenerateAtFixedLengthWithContext(ctx context.Context, fixedLen int) ([]string, error) {
+	return d.GenerateAtFixedLengthWithContextAndLimit(ctx, fixedLen, 0)
+}
+
+// GenerateAtFixedLengthWithLimit returns up to maxResults strings of exactly fixedLen
+func (d *DankEncoder) GenerateAtFixedLengthWithLimit(fixedLen int, maxResults int) []string {
+	results, _ := d.GenerateAtFixedLengthWithContextAndLimit(context.Background(), fixedLen, maxResults)
+	return results
+}
+
+// GenerateAtFixedLengthWithContextAndLimit returns up to maxResults strings of exactly fixedLen with context cancellation support
+func (d *DankEncoder) GenerateAtFixedLengthWithContextAndLimit(ctx context.Context, fixedLen int, maxResults int) ([]string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if fixedLen < 0 {
+		return nil, nil
+	}
+	if maxResults < 0 {
+		maxResults = 0
+	}
+	var results []string
+	if maxResults > 0 {
+		capacity := maxResults
+		if capacity > 1024 {
+			capacity = 1024
+		}
+		results = make([]string, 0, capacity)
+	}
+	err := d.dfsGenerateFixed(ctx, 0, "", fixedLen, maxResults, &results)
+	sort.Strings(results)
+	return results, err
+}
+
+// dfsGenerateFixed generates only strings of exact length with context and limit checks
+func (d *DankEncoder) dfsGenerateFixed(ctx context.Context, state int, curr string, remaining int, maxResults int, results *[]string) error {
+	if maxResults > 0 && len(*results) >= maxResults {
+		return nil
+	}
+
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+
 	// Skip dead state (last state in DFA)
 	deadState := len(d.dfa) - 1
 	if state == deadState {
-		return
+		return nil
+	}
+
+	if remaining < 0 {
+		return nil
 	}
 
 	if remaining == 0 {
 		if d.dfa[state].IsFinal {
 			*results = append(*results, curr)
 		}
-		return
+		return nil
 	}
 
 	// Iterate over actual transitions (sorted for deterministic output)
 	// Can't just use alphabet because pattern may have characters outside alphabet (like *)
-	chars := []byte{}
+	chars := make([]byte, 0, len(d.dfa[state].Trans))
 	for ch := range d.dfa[state].Trans {
 		chars = append(chars, ch)
 	}
 	sort.Slice(chars, func(i, j int) bool { return chars[i] < chars[j] })
 
 	for _, ch := range chars {
+		if maxResults > 0 && len(*results) >= maxResults {
+			return nil
+		}
 		next := d.dfa[state].Trans[ch]
 		// Don't transition to dead state during generation
 		if next != deadState {
-			d.dfsGenerateFixed(next, curr+string(ch), remaining-1, results)
+			if err := d.dfsGenerateFixed(ctx, next, curr+string(ch), remaining-1, maxResults, results); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 // NumStates returns the number of DFA states
