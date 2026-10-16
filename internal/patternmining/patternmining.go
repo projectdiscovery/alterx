@@ -6,6 +6,7 @@ package patternmining
 // subdomain patterns from observed data.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -387,10 +388,20 @@ func (m *Miner) EstimateCount(patterns []string) int64 {
 
 // GenerateFromPatterns generates subdomains from discovered patterns
 func (m *Miner) GenerateFromPatterns(patterns []string) []string {
+	return m.GenerateFromPatternsWithContext(context.Background(), patterns)
+}
+
+// GenerateFromPatternsWithContext generates subdomains from discovered patterns with context cancellation support
+func (m *Miner) GenerateFromPatternsWithContext(ctx context.Context, patterns []string) []string {
 	var results []string
 	seen := make(map[string]bool)
 
 	for _, pattern := range patterns {
+		if ctx != nil {
+			if err := ctx.Err(); err != nil {
+				return results
+			}
+		}
 		subdomainPattern := strings.TrimSuffix(pattern, "."+m.opts.Target)
 		if len(subdomainPattern) == 0 {
 			continue
@@ -404,7 +415,12 @@ func (m *Miner) GenerateFromPatterns(patterns []string) []string {
 		}
 
 		encoder := dank.NewDankEncoder(m.preparePattern(subdomainPattern), fixedSlice)
-		generated := encoder.GenerateAtFixedLength(fixedSlice)
+		var generated []string
+		if m.opts.PatternThreshold > 0 {
+			generated, _ = encoder.GenerateAtFixedLengthWithContextAndLimit(ctx, fixedSlice, m.opts.PatternThreshold)
+		} else {
+			generated, _ = encoder.GenerateAtFixedLengthWithContext(ctx, fixedSlice)
+		}
 
 		for _, item := range generated {
 			fullHost := item + "." + m.opts.Target
