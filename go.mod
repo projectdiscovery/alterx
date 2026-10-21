@@ -1,8 +1,6 @@
 module github.com/projectdiscovery/alterx
 
-go 1.25.0
-
-toolchain go1.26.10
+go 1.26.10
 
 require (
 	github.com/projectdiscovery/fasttemplate v0.0.2
