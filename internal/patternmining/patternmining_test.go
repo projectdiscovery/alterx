@@ -2,11 +2,26 @@ package patternmining
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+// cancelAfter cancels once Err has been called remain times.
+type cancelAfter struct {
+	context.Context
+	cancel context.CancelFunc
+	remain atomic.Int32
+}
+
+func (c *cancelAfter) Err() error {
+	if c.remain.Add(-1) == 0 {
+		c.cancel()
+	}
+	return c.Context.Err()
+}
 
 func TestGenerateFromPatterns(t *testing.T) {
 	domains := []string{
@@ -65,6 +80,29 @@ func TestGenerateFromPatternsWithContext_Timeout(t *testing.T) {
 
 	results := miner.GenerateFromPatternsWithContext(ctx, patterns)
 	require.Empty(t, results)
+}
+
+func TestGenerateFromPatternsWithContext_CancelsDuringWalk(t *testing.T) {
+	miner := NewMiner(&Options{
+		Target:           "example.com",
+		PatternThreshold: 0,
+	})
+	parent, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	ctx := &cancelAfter{Context: parent, cancel: cancel}
+	// The miner and the encoder each check once before the walk.
+	ctx.remain.Store(6)
+
+	done := make(chan []string, 1)
+	go func() {
+		done <- miner.GenerateFromPatternsWithContext(ctx, []string{"[a-z][a-z][a-z][a-z][a-z].example.com"})
+	}()
+	select {
+	case results := <-done:
+		require.Less(t, len(results), 1000)
+	case <-time.After(3 * time.Second):
+		t.Fatal("pattern generation kept running after cancel")
+	}
 }
 
 func TestGenerateFromPatterns_ThresholdLimit(t *testing.T) {

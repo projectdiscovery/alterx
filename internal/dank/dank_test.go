@@ -2,11 +2,27 @@ package dank
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+// cancelAfter cancels once Err has been called remain times. The entry check
+// uses one call, so a budget above that only trips inside the walk.
+type cancelAfter struct {
+	context.Context
+	cancel context.CancelFunc
+	remain atomic.Int32
+}
+
+func (c *cancelAfter) Err() error {
+	if c.remain.Add(-1) == 0 {
+		c.cancel()
+	}
+	return c.Context.Err()
+}
 
 func TestGenerateAtFixedLength(t *testing.T) {
 	encoder := NewDankEncoder("(a|b)(1|2)", 2)
@@ -71,6 +87,26 @@ func TestGenerateAtFixedLengthWithContext_Timeout(t *testing.T) {
 	_, err := encoder.GenerateAtFixedLengthWithContext(ctx, 5)
 	require.Error(t, err)
 	require.Equal(t, context.DeadlineExceeded, err)
+}
+
+func TestGenerateAtFixedLengthWithContext_CancelsDuringWalk(t *testing.T) {
+	encoder := NewDankEncoder("[a-z][a-z][a-z][a-z][a-z]", 5)
+	parent, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	ctx := &cancelAfter{Context: parent, cancel: cancel}
+	ctx.remain.Store(4)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := encoder.GenerateAtFixedLengthWithContext(ctx, 5)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(3 * time.Second):
+		t.Fatal("walk did not observe cancellation")
+	}
 }
 
 func TestGenerateAtFixedLengthWithContextAndLimit(t *testing.T) {
