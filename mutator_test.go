@@ -2,6 +2,7 @@ package alterx
 
 import (
 	"bytes"
+	"context"
 	"math"
 	"strings"
 	"testing"
@@ -48,6 +49,39 @@ func TestMutatorResults(t *testing.T) {
 	require.Nil(t, err)
 	count := strings.Split(strings.TrimSpace(buff.String()), "\n")
 	require.EqualValues(t, 80, len(count), buff.String())
+}
+
+func TestExecuteDiscoverHonorsCancelledContext(t *testing.T) {
+	previous := DedupeResults
+	DedupeResults = false
+	t.Cleanup(func() {
+		DedupeResults = previous
+	})
+
+	m, err := New(&Options{
+		Mode: "discover",
+		Domains: []string{
+			"api-prod-1.example.com",
+			"api-prod-2.example.com",
+			"api-prod-3.example.com",
+		},
+		MaxSize:     math.MaxInt,
+		MinDistance: 1,
+		MaxDistance: 3,
+	})
+	require.NoError(t, err)
+
+	mined, err := m.miner.Mine()
+	require.NoError(t, err)
+	require.NotEmpty(t, m.miner.GenerateFromPatterns(mined.Patterns))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var got []string
+	for sub := range m.Execute(ctx) {
+		got = append(got, sub)
+	}
+	require.Empty(t, got)
 }
 
 func TestMutatorLineLimit(t *testing.T) {

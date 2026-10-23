@@ -215,7 +215,8 @@ func (m *Mutator) Execute(ctx context.Context) <-chan string {
 			for _, sub := range m.Options.Domains {
 				seen[sub] = true
 			}
-			generated := m.miner.GenerateFromPatterns(m.miningResult.Patterns)
+			// In discover mode, only use mined patterns
+			generated := m.miner.GenerateFromPatternsWithContext(ctx, m.miningResult.Patterns)
 			for _, subdomain := range generated {
 				if seen[subdomain] {
 					continue
