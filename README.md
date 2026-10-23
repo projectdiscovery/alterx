@@ -40,7 +40,7 @@
 - Multiple operation modes (default, discover, both)
 
 ## Installation
-To install alterx, you need to have Golang 1.19 installed on your system. You can download Golang from [here](https://go.dev/doc/install). After installing Golang, you can use the following command to install alterx:
+To install alterx, you need to have Golang 1.26.10 installed on your system. You can download Golang from [here](https://go.dev/doc/install). After installing Golang, you can use the following command to install alterx:
 
 
 ```bash
