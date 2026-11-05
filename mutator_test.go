@@ -5,6 +5,7 @@ import (
 	"context"
 	"math"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -115,4 +116,72 @@ func TestEnrichPayloadsMultiLevelInputs(t *testing.T) {
 	require.Contains(t, words, "nuclei")
 	require.Contains(t, words, "api")
 	require.NotContains(t, words, "nucleiapi")
+}
+
+// setDefaultConfig replaces DefaultConfig for the duration of the test.
+// Tests that use it must not call t.Parallel.
+func setDefaultConfig(t *testing.T, cfg Config) {
+	t.Helper()
+
+	saved := DefaultConfig
+	DefaultConfig = cfg
+
+	t.Cleanup(func() { DefaultConfig = saved })
+}
+
+func TestEnrichDoesNotLeakAcrossNewCalls(t *testing.T) {
+	setDefaultConfig(t, Config{
+		Patterns: []string{"{{sub}}-{{word}}.{{suffix}}"},
+		Payloads: map[string][]string{"word": {"dev"}},
+	})
+
+	_, err := New(&Options{Domains: []string{"secretproject.target-a.com"}, Enrich: true})
+	require.NoError(t, err)
+
+	m, err := New(&Options{Domains: []string{"api.target-b.com"}})
+	require.NoError(t, err)
+
+	var got []string
+	for sub := range m.Execute(context.Background()) {
+		got = append(got, sub)
+	}
+
+	require.Equal(t, []string{"api-dev.target-b.com"}, got)
+}
+
+func TestNewDoesNotModifyCallerPayloads(t *testing.T) {
+	payloads := map[string][]string{"word": {"dev", "dev"}}
+	_, err := New(&Options{
+		Domains:  []string{"secretproject.target-a.com"},
+		Patterns: testConfig.Patterns,
+		Payloads: payloads,
+		Enrich:   true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, map[string][]string{"word": {"dev", "dev"}}, payloads)
+}
+
+func TestNewConcurrentEnrich(t *testing.T) {
+	setDefaultConfig(t, Config{
+		Patterns: []string{"{{sub}}-{{word}}.{{suffix}}"},
+		Payloads: map[string][]string{"word": {"dev"}},
+	})
+
+	subs := []string{"alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel"}
+	mutators := make([]*Mutator, len(subs))
+	errs := make([]error, len(subs))
+
+	var wg sync.WaitGroup
+	for i, sub := range subs {
+		wg.Go(func() {
+			mutators[i], errs[i] = New(&Options{Domains: []string{sub + ".example.com"}, Enrich: true})
+		})
+	}
+
+	wg.Wait()
+
+	for i, sub := range subs {
+		require.NoError(t, errs[i])
+		require.ElementsMatch(t, []string{sub, "dev"}, mutators[i].Options.Payloads["word"], sub)
+	}
 }
