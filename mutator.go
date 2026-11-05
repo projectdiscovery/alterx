@@ -106,9 +106,17 @@ type Mutator struct {
 }
 
 // New creates and returns new mutator instance from options.
-// New writes defaults and the payloads it uses back into opts, so pass a
-// new Options value to each call.
+// New does not modify opts, so one Options value can be reused for several
+// calls. The returned Mutator works on its own copy, Mutator.Options, which
+// holds the resolved defaults and, in default and both modes, the payloads
+// it uses. The copy is shallow, so do not change the contents of slices or
+// maps in opts while the Mutator is in use.
 func New(opts *Options) (*Mutator, error) {
+	// From here on, opts is the Mutator's copy. Defaults and working payloads
+	// are written to it, so they never reach the caller's Options.
+	owned := *opts
+	opts = &owned
+
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
