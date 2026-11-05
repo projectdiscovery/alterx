@@ -101,3 +101,18 @@ func TestMutatorLineLimit(t *testing.T) {
 	require.EqualValues(t, 5, len(lines))
 	require.EqualValues(t, 5, m.payloadCount)
 }
+
+func TestEnrichPayloadsMultiLevelInputs(t *testing.T) {
+	opts := &Options{
+		Domains:  []string{"cloud.nuclei.scanme.sh", "api.scanme.sh"},
+		Patterns: testConfig.Patterns,
+		Payloads: map[string][]string{"word": {"dev"}},
+		Enrich:   true,
+	}
+	_, err := New(opts)
+	require.Nil(t, err)
+	words := opts.Payloads["word"]
+	require.Contains(t, words, "nuclei")
+	require.Contains(t, words, "api")
+	require.NotContains(t, words, "nucleiapi")
+}

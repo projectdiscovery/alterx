@@ -481,7 +481,7 @@ func (m *Mutator) enrichPayloads() {
 	for _, v := range m.Inputs {
 		temp.WriteString(v.Sub + " ")
 		if len(v.MultiLevel) > 0 {
-			temp.WriteString(strings.Join(v.MultiLevel, " "))
+			temp.WriteString(strings.Join(v.MultiLevel, " ") + " ")
 		}
 	}
 	numbers := extractNumbers.FindAllString(temp.String(), -1)
