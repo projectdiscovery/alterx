@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"regexp"
 	"strings"
@@ -31,7 +32,8 @@ type Options struct {
 	// list of Domains to use as base
 	Domains []string
 	// list of words to use while creating permutations
-	// if empty DefaultWordList is used
+	// if empty DefaultConfig.Payloads is used. New works on its own copy,
+	// so the map passed in and DefaultConfig.Payloads stay unchanged.
 	Payloads map[string][]string
 	// list of pattersn to use while creating permutations
 	// if empty DefaultPatterns are used
@@ -103,7 +105,9 @@ type Mutator struct {
 	miningResult     *patternmining.Result
 }
 
-// New creates and returns new mutator instance from options
+// New creates and returns new mutator instance from options.
+// New writes defaults and the payloads it uses back into opts, so pass a
+// new Options value to each call.
 func New(opts *Options) (*Mutator, error) {
 	if err := opts.Validate(); err != nil {
 		return nil, err
@@ -138,13 +142,18 @@ func New(opts *Options) (*Mutator, error) {
 
 	if opts.Mode == "default" || opts.Mode == "both" {
 		// validate payloads and patterns for default and both modes
-		if len(opts.Payloads) == 0 {
-			opts.Payloads = map[string][]string{}
+		payloads := opts.Payloads
+		if len(payloads) == 0 {
 			if len(DefaultConfig.Payloads) == 0 {
 				return nil, fmt.Errorf("something went wrong, `DefaultWordList` and input wordlist are empty")
 			}
-			opts.Payloads = DefaultConfig.Payloads
+
+			payloads = DefaultConfig.Payloads
 		}
+		// Dedupe and enrichment below replace map entries. Work on a copy so
+		// they never change DefaultConfig.Payloads or the caller's map.
+		opts.Payloads = maps.Clone(payloads)
+
 		if len(opts.Patterns) == 0 {
 			if len(DefaultConfig.Patterns) == 0 {
 				return nil, fmt.Errorf("something went wrong,`DefaultPatters` and input patterns are empty")
