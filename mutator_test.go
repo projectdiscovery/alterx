@@ -2,6 +2,7 @@ package alterx
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"math"
 	"strings"
@@ -110,9 +111,10 @@ func TestEnrichPayloadsMultiLevelInputs(t *testing.T) {
 		Payloads: map[string][]string{"word": {"dev"}},
 		Enrich:   true,
 	}
-	_, err := New(opts)
+	m, err := New(opts)
 	require.Nil(t, err)
-	words := opts.Payloads["word"]
+
+	words := m.Options.Payloads["word"]
 	require.Contains(t, words, "nuclei")
 	require.Contains(t, words, "api")
 	require.NotContains(t, words, "nucleiapi")
@@ -147,6 +149,53 @@ func TestEnrichDoesNotLeakAcrossNewCalls(t *testing.T) {
 	}
 
 	require.Equal(t, []string{"api-dev.target-b.com"}, got)
+}
+
+func TestEnrichDoesNotLeakAcrossReusedOptions(t *testing.T) {
+	setDefaultConfig(t, Config{
+		Patterns: []string{"{{sub}}-{{word}}.{{suffix}}"},
+		Payloads: map[string][]string{"word": {"dev"}},
+	})
+
+	opts := &Options{Enrich: true}
+
+	opts.Domains = []string{"secretproject.target-a.com"}
+	_, err := New(opts)
+	require.NoError(t, err)
+
+	opts.Domains = []string{"api.target-b.com"}
+	m, err := New(opts)
+	require.NoError(t, err)
+
+	var got []string
+	for sub := range m.Execute(context.Background()) {
+		got = append(got, sub)
+	}
+
+	require.Equal(t, []string{"api-dev.target-b.com"}, got)
+}
+
+func TestNewDoesNotModifyOptions(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []string{"", "default", "discover", "both"} {
+		t.Run(cmp.Or(mode, "unset"), func(t *testing.T) {
+			t.Parallel()
+
+			newOptions := func() *Options {
+				return &Options{
+					Domains: []string{"api-1.example.com", "api-2.example.com"},
+					Enrich:  true,
+					Mode:    mode,
+				}
+			}
+			opts := newOptions()
+
+			_, err := New(opts)
+			require.NoError(t, err)
+			require.Equal(t, newOptions(), opts)
+		})
+	}
 }
 
 func TestNewDoesNotModifyCallerPayloads(t *testing.T) {
