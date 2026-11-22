@@ -234,3 +234,49 @@ func TestNewConcurrentEnrich(t *testing.T) {
 		require.ElementsMatch(t, []string{sub, "dev"}, mutators[i].Options.Payloads["word"], sub)
 	}
 }
+
+func Test_Mutator_unknownPlaceholder(t *testing.T) {
+	tests := []struct {
+		name     string
+		domains  []string
+		patterns []string
+		wantErr  string
+	}{
+		{
+			name:     "unknown placeholder is rejected",
+			domains:  []string{"api.example.com"},
+			patterns: []string{"{{bogus}}.{{suffix}}"},
+			wantErr:  "unknown placeholder {{bogus}}",
+		},
+		{
+			name:     "documented but unsatisfied placeholder is still allowed",
+			domains:  []string{"api.example.com"},
+			patterns: []string{"{{sub1}}-{{suffix}}"},
+		},
+		{
+			name:     "input variable",
+			domains:  []string{"api.example.com"},
+			patterns: []string{"{{sub}}-{{suffix}}"},
+		},
+		{
+			name:     "payload key",
+			domains:  []string{"api.example.com"},
+			patterns: []string{"{{word}}.{{root}}"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := New(&Options{
+				Domains:  tt.domains,
+				Patterns: tt.patterns,
+				MaxSize:  math.MaxInt,
+			})
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}

@@ -11,6 +11,9 @@ import (
 
 var varRegex = regexp.MustCompile(`\{\{([a-zA-Z0-9]+)\}\}`)
 
+// multiLevelVar matches the advanced {{subN}} placeholders, where N is a subdomain level.
+var multiLevelVar = regexp.MustCompile(`^sub[0-9]+$`)
+
 // returns no of variables present in statement
 func getVarCount(data string) int {
 	return len(varRegex.FindAllStringSubmatch(data, -1))
