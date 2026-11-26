@@ -11,6 +11,13 @@ import (
 
 var varRegex = regexp.MustCompile(`\{\{([a-zA-Z0-9]+)\}\}`)
 
+// anyTagRegex matches every {{...}} tag, including names varRegex does not accept
+// (underscores, dashes, spaces), so a typo cannot slip past placeholder validation.
+var anyTagRegex = regexp.MustCompile(`\{\{([^{}]+)\}\}`)
+
+// multiLevelVar matches the advanced {{subN}} placeholders, where N is a subdomain level.
+var multiLevelVar = regexp.MustCompile(`^sub[0-9]+$`)
+
 // returns no of variables present in statement
 func getVarCount(data string) int {
 	return len(varRegex.FindAllStringSubmatch(data, -1))

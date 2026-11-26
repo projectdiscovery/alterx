@@ -8,6 +8,7 @@ import (
 	"maps"
 	"math"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -185,6 +186,9 @@ func New(opts *Options) (*Mutator, error) {
 		}
 		if opts.Enrich {
 			m.enrichPayloads()
+		}
+		if err := m.validatePatternPlaceholders(); err != nil {
+			return nil, err
 		}
 	}
 
@@ -487,6 +491,45 @@ func (m *Mutator) validatePatterns() error {
 		// check if all placeholders are correctly used and are valid
 		if _, err := fasttemplate.NewTemplate(v, ParenthesisOpen, ParenthesisClose); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// validatePatternPlaceholders rejects patterns that reference a placeholder alterx never provides.
+// A placeholder that is missing for some inputs is skipped by design (see clusterBomb), but a name
+// that exists neither as an input variable nor as a payload key is a typo: the pattern is skipped for
+// every input, so the command produces no permutations at all and still exits successfully.
+func (m *Mutator) validatePatternPlaceholders() error {
+	known := map[string]struct{}{
+		"tld": {}, "etld": {}, "sld": {}, "root": {}, "sub": {}, "suffix": {},
+	}
+	for k := range DefaultConfig.Payloads {
+		known[k] = struct{}{}
+	}
+	for k := range m.Options.Payloads {
+		known[k] = struct{}{}
+	}
+
+	available := make([]string, 0, len(known))
+	for k := range known {
+		available = append(available, "{{"+k+"}}")
+	}
+	sort.Strings(available)
+
+	for _, pattern := range m.Options.Patterns {
+		for _, match := range anyTagRegex.FindAllStringSubmatch(pattern, -1) {
+			placeholder := match[1]
+			if _, ok := known[placeholder]; ok {
+				continue
+			}
+			// {{subN}} is documented as an advanced placeholder that only exists for inputs with
+			// more than one subdomain level, so any N is valid
+			if multiLevelVar.MatchString(placeholder) {
+				continue
+			}
+			return fmt.Errorf("pattern %q uses the unknown placeholder {{%s}} (available placeholders: %s, {{subN}})",
+				pattern, placeholder, strings.Join(available, ", "))
 		}
 	}
 	return nil
