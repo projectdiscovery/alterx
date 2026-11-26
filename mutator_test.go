@@ -249,6 +249,18 @@ func Test_Mutator_unknownPlaceholder(t *testing.T) {
 			wantErr:  "unknown placeholder {{bogus}}",
 		},
 		{
+			name:     "unknown placeholder with underscore is rejected",
+			domains:  []string{"api.example.com"},
+			patterns: []string{"{{bogus_name}}.{{suffix}}"},
+			wantErr:  "unknown placeholder {{bogus_name}}",
+		},
+		{
+			name:     "unknown placeholder with dash is rejected",
+			domains:  []string{"api.example.com"},
+			patterns: []string{"{{bogus-name}}.{{suffix}}"},
+			wantErr:  "unknown placeholder {{bogus-name}}",
+		},
+		{
 			name:     "documented but unsatisfied placeholder is still allowed",
 			domains:  []string{"api.example.com"},
 			patterns: []string{"{{sub1}}-{{suffix}}"},

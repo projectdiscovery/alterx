@@ -518,7 +518,8 @@ func (m *Mutator) validatePatternPlaceholders() error {
 	sort.Strings(available)
 
 	for _, pattern := range m.Options.Patterns {
-		for _, placeholder := range getAllVars(pattern) {
+		for _, match := range anyTagRegex.FindAllStringSubmatch(pattern, -1) {
+			placeholder := match[1]
 			if _, ok := known[placeholder]; ok {
 				continue
 			}
